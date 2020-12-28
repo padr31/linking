@@ -6,12 +6,13 @@ from biopandas.mol2 import PandasMol2
 import networkx as nx
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from torch_geometric.utils import from_networkx
 from torch_geometric import data
+from torch_geometric.data import InMemoryDataset
 import dgl
 import torch
 
-pdb_dir = './datasets/refined-set'
+pdb_dir = './datasets/raw/refined-set'
+bad_data = ['5ny1']
 pd.set_option('display.max_columns', None)
 
 
@@ -162,14 +163,14 @@ def mol2_file_to_torch_geometric(path):
     bonds = pd.concat([bonds, bonds_other_direction])
 
     # Get node features from DGL graph and concatenate them
-    features = [torch.tensor([float(i) for i in atoms[feat].tolist()]) for feat in ['atom_id', 'x', 'y', 'z', 'atom_type']]
+    features = [torch.tensor([float(i) for i in atoms[feat].tolist()], dtype=torch.float) for feat in ['atom_id', 'x', 'y', 'z', 'atom_type']]
     features = [
         f.unsqueeze(dim=1) if len(f.shape) == 1 else f for f in features
     ]
     node_features = torch.cat(features, dim=1)
 
     # Get edge features from DGL graph and concatenate them
-    edge_feats = [torch.tensor([float(edge) for edge in bonds[feat].tolist()]) for feat in ['bond_type']]
+    edge_feats = [torch.tensor([float(edge) for edge in bonds[feat].tolist()], dtype=torch.float) for feat in ['bond_type']]
     edge_feats = [
         e.unsqueeze(dim=1) if len(e.shape) == 1 else e for e in edge_feats
     ]
@@ -178,7 +179,7 @@ def mol2_file_to_torch_geometric(path):
     # Create the Torch Geometric graph
     geom_graph = data.Data(
         x=node_features,
-        edge_index=torch.tensor([bonds['atom1'].tolist(), bonds['atom2'].tolist()]).contiguous(),
+        edge_index=torch.tensor([bonds['atom1'].tolist(), bonds['atom2'].tolist()], dtype=torch.long).contiguous(),
         edge_attr=edge_feats,
     )
     return geom_graph
@@ -192,30 +193,40 @@ def mol2_file_to_dgl(path):
 def pdb_file_to_torch_geometric(path):
     return ''
 
-def prepare_data(pdb_dir):
-    ligands = []
-    pockets = []
-    for _, dirs, _ in os.walk(pdb_dir):
-        i = 0
-        total = len(dirs)
-        for dir in dirs:
-            i += 1
-            if i == 2:
-                break
-            print('(' + str(int(100*i/total)) + '%) Processing ' + dir)
-            for path, _, protein_files in os.walk(pdb_dir + os.sep + dir):
-                for file in protein_files:
-                    full_path = path + os.sep + file
-                    if file.endswith('ligand.mol2'):
-                        g = mol2_file_to_torch_geometric(full_path)
-                        torchgeom_plot_3D(g, 90)
-                        ligands.append(g)
-                        print(g.edge_index)
-                        print(g.edge_attr)
-                        print(g.num_nodes)
-                        print(g.num_edges)
-                    elif file.endswith('pocket.pdb'):
-                        pockets.append(pdb_file_to_torch_geometric(full_path))
+class LigandDataset(InMemoryDataset):
+    def __init__(self, root, transform=None, pre_transform=None):
+        super(LigandDataset, self).__init__(root, transform, pre_transform)
+        self.data, self.slices = torch.load(self.processed_paths[0])
 
-    return ligands, pockets
-prepare_data(pdb_dir)
+    @property
+    def processed_file_names(self):
+        return ['ligands.pt']
+
+    def process(self):
+        # Read data into huge `Data` list.
+        ligands = []
+        for _, dirs, _ in os.walk(pdb_dir):
+            i = 0
+            total = len(dirs)
+            for dir in dirs:
+                i += 1
+                print('(' + str(int(100 * i / total)) + '%) Processing ' + dir)
+                for path, _, protein_files in os.walk(pdb_dir + os.sep + dir):
+                    for file in protein_files:
+                        full_path = path + os.sep + file
+                        if file.endswith('ligand.mol2') and not file.split("_")[0] in bad_data:
+                            g = mol2_file_to_torch_geometric(full_path)
+                            #torchgeom_plot_3D(g, 90)
+                            ligands.append(g)
+        data_list = ligands
+        if self.pre_filter is not None:
+            data_list = [data for data in data_list if self.pre_filter(data)]
+
+        if self.pre_transform is not None:
+            data_list = [self.pre_transform(data) for data in data_list]
+
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
+
+dataset = LigandDataset(root='./datasets')
+print()
