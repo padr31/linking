@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import re
 from biopandas.mol2 import PandasMol2
+from biopandas.pdb import PandasPdb
 import networkx as nx
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -10,13 +11,14 @@ from torch_geometric import data
 from torch_geometric.data import InMemoryDataset
 import dgl
 import torch
+from rdkit import Chem
 
 pdb_dir = './datasets/raw/refined-set'
-bad_data = ['5ny1']
+bad_data = ['1g7v', '1r1h', '2a5b', '2zjw']
 pd.set_option('display.max_columns', None)
 
 
-def network_plot_3D(G, angle, save=False):
+def network_plot_3D(G, angle):
     # Get node positions
     pos = {node[0]: (node[1]['x'], node[1]['y'], node[1]['z']) for node in G.nodes.data()}
 
@@ -54,7 +56,7 @@ def network_plot_3D(G, angle, save=False):
     plt.show()
     return
 
-def torchgeom_plot_3D(graph, angle, save=False):
+def torchgeom_plot_3D(graph, angle):
     # Get node positions
     pos = {int(node[0].item()): (node[1].item(), node[2].item(), node[3].item()) for node in graph.x}
 
@@ -126,6 +128,9 @@ allowable_atoms = ['C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg', 'Na', '
                    'Ni', 'Cd', 'In', 'Mn', 'Zr', 'Cr', 'Pt', 'Hg', 'Pb', 'H', 'Du', 'LP']
 allowable_bonds = ['ar', '1', '2', '3', 'am', 'du', 'un', 'nc']
 
+allowable_rdkit_bonds = [Chem.rdchem.BondType.AROMATIC, Chem.rdchem.BondType.SINGLE,
+                         Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE]
+
 def featurise_ligand_atoms(atoms_df):
     atoms_df['atom_id'] = atoms_df['atom_id'] - 1
     atoms_df.loc[:, 'atom_type'] = atoms_df["atom_type"].apply(lambda a: allowable_atoms.index(a.split('.')[0]))
@@ -147,9 +152,6 @@ def mol2_file_to_networkx(path):
     for index, row in bonds.iterrows():
         g.add_edge(int(row['atom1']), int(row['atom2']), bond_type=row['bond_type'])
 
-    print(bonds.head(3))
-    print(atoms.head(3))
-
     return g
 
 def mol2_file_to_torch_geometric(path):
@@ -162,7 +164,6 @@ def mol2_file_to_torch_geometric(path):
     bonds_other_direction = bonds_other_direction.rename(columns={'atom1': 'atom2', 'atom2': 'atom1'})
     bonds = pd.concat([bonds, bonds_other_direction])
 
-    # Get node features from DGL graph and concatenate them
     features = [torch.tensor([float(i) for i in atoms[feat].tolist()], dtype=torch.float) for feat in ['atom_id', 'x', 'y', 'z', 'atom_type']]
     features = [
         f.unsqueeze(dim=1) if len(f.shape) == 1 else f for f in features
@@ -191,7 +192,50 @@ def mol2_file_to_dgl(path):
     return g
 
 def pdb_file_to_torch_geometric(path):
-    return ''
+    mol = Chem.MolFromPDBFile(path)
+
+    # add hydrogens
+    atoms = PandasPdb().read_pdb(path).df
+
+    node_features = []
+
+    num_atoms = len(atoms['ATOM'])-1
+    for atom in mol.GetAtoms():
+        pdb_loc = atom.GetPDBResidueInfo().GetSerialNumber()-1 # minus 1 because iloc starts at 0 and serial numbers start at 1
+        if pdb_loc > num_atoms:
+            continue
+        pandas_atom = atoms['ATOM'].iloc[[pdb_loc]]
+
+        feature_vector = [atom.GetIdx(),
+                          float(pandas_atom['x_coord']),
+                          float(pandas_atom['y_coord']),
+                          float(pandas_atom['z_coord']),
+                          allowable_atoms.index(atom.GetSymbol())]
+        node_features.append(feature_vector)
+
+    # Add edges
+    edge_src = []
+    edge_dst = []
+    edge_types = []
+    num_bonds = mol.GetNumBonds()
+    for i in range(num_bonds):
+        bond = mol.GetBondWithIdx(i)
+        u = bond.GetBeginAtomIdx()
+        v = bond.GetEndAtomIdx()
+        if mol.GetAtomWithIdx(u).GetPDBResidueInfo().GetSerialNumber() - 1 > num_atoms or mol.GetAtomWithIdx(u).GetPDBResidueInfo().GetSerialNumber() - 1 > num_atoms:
+            continue
+        edge_src.extend([u, v])
+        edge_dst.extend([v, u])
+        type = allowable_rdkit_bonds.index(bond.GetBondType())
+        edge_types.extend([[type],[type]])
+
+    # Create the Torch Geometric graph
+    geom_graph = data.Data(
+        x=torch.tensor(node_features, dtype=torch.float),
+        edge_index=torch.tensor([edge_src, edge_dst], dtype=torch.long).contiguous(),
+        edge_attr=torch.tensor(edge_types, dtype=torch.float).contiguous(),
+    )
+    return geom_graph
 
 class LigandDataset(InMemoryDataset):
     def __init__(self, root, transform=None, pre_transform=None):
@@ -228,5 +272,45 @@ class LigandDataset(InMemoryDataset):
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
 
-dataset = LigandDataset(root='./datasets')
-print()
+
+class PocketDataset(InMemoryDataset):
+    def __init__(self, root, transform=None, pre_transform=None):
+        super(PocketDataset, self).__init__(root, transform, pre_transform)
+        self.data, self.slices = torch.load(self.processed_paths[0])
+
+    @property
+    def processed_file_names(self):
+        return ['pockets.pt']
+
+    def process(self):
+        # Read data into huge `Data` list.
+        pockets = []
+        for _, dirs, _ in os.walk(pdb_dir):
+            i = 0
+            total = len(dirs)
+            for dir in dirs:
+                i += 1
+                print('(' + str(int(100 * i / total)) + '%) Processing ' + dir)
+                for path, _, protein_files in os.walk(pdb_dir + os.sep + dir):
+                    for file in protein_files:
+                        full_path = path + os.sep + file
+                        if file.endswith('pocket.pdb') and not file.split("_")[0] in bad_data:
+                            g = pdb_file_to_torch_geometric(full_path)
+                            #torchgeom_plot_3D(g, 90)
+                            pockets.append(g)
+        data_list = pockets
+        if self.pre_filter is not None:
+            data_list = [data for data in data_list if self.pre_filter(data)]
+
+        if self.pre_transform is not None:
+            data_list = [self.pre_transform(data) for data in data_list]
+
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
+
+
+d = PocketDataset(root='./datasets')
+#g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1g7v/1g7v_pocket.pdb')
+#torchgeom_plot_3D(g, 0)
+#g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_mol.mol2')
+#torchgeom_plot_3D(g, 0)
