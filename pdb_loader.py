@@ -14,11 +14,11 @@ import torch
 from rdkit import Chem
 
 pdb_dir = './datasets/raw/refined-set'
-bad_data = ['1g7v', '1r1h', '2a5b', '2zjw']
+bad_data = ['1g7v', '1r1h', '2a5b', '2zjw', '1cps', '4abd']
 pd.set_option('display.max_columns', None)
 
 
-def network_plot_3D(G, angle):
+def networkx_plot_3D(G, angle):
     # Get node positions
     pos = {node[0]: (node[1]['x'], node[1]['y'], node[1]['z']) for node in G.nodes.data()}
 
@@ -171,17 +171,17 @@ def mol2_file_to_torch_geometric(path):
     node_features = torch.cat(features, dim=1)
 
     # Get edge features from DGL graph and concatenate them
-    edge_feats = [torch.tensor([float(edge) for edge in bonds[feat].tolist()], dtype=torch.float) for feat in ['bond_type']]
-    edge_feats = [
-        e.unsqueeze(dim=1) if len(e.shape) == 1 else e for e in edge_feats
+    edge_features = [torch.tensor([float(edge) for edge in bonds[feat].tolist()], dtype=torch.float) for feat in ['bond_type']]
+    edge_features = [
+        e.unsqueeze(dim=1) if len(e.shape) == 1 else e for e in edge_features
     ]
-    edge_feats = torch.cat(edge_feats, dim=1)
+    edge_features = torch.cat(edge_features, dim=1)
 
     # Create the Torch Geometric graph
     geom_graph = data.Data(
         x=node_features,
         edge_index=torch.tensor([bonds['atom1'].tolist(), bonds['atom2'].tolist()], dtype=torch.long).contiguous(),
-        edge_attr=edge_feats,
+        edge_attr=edge_features,
     )
     return geom_graph
 
@@ -237,6 +237,27 @@ def pdb_file_to_torch_geometric(path):
     )
     return geom_graph
 
+def process_dir(dir, file_ending, graph_constructor, bad_data):
+    # Read data into huge `Data` list.
+    files_to_process = []
+    for path, dirs, files in os.walk(dir):
+        for file in files:
+            if file.endswith(file_ending) and not file.split('_')[0] in bad_data:
+                full_path = path + os.sep + file
+                files_to_process.append(full_path)
+
+    graphs = []
+    total = len(files_to_process)
+    print('Starting to process ' + str(total) + ' files...')
+    i = 0
+    for path in sorted(files_to_process):
+        i+=1
+        print('(' + str(int(100 * i / total)) + '%) Processing ' + os.path.basename(path))
+        g = graph_constructor(path)
+        graphs.append(g)
+
+    return graphs
+
 class LigandDataset(InMemoryDataset):
     def __init__(self, root, transform=None, pre_transform=None):
         super(LigandDataset, self).__init__(root, transform, pre_transform)
@@ -247,31 +268,17 @@ class LigandDataset(InMemoryDataset):
         return ['ligands.pt']
 
     def process(self):
-        # Read data into huge `Data` list.
-        ligands = []
-        for _, dirs, _ in os.walk(pdb_dir):
-            i = 0
-            total = len(dirs)
-            for dir in dirs:
-                i += 1
-                print('(' + str(int(100 * i / total)) + '%) Processing ' + dir)
-                for path, _, protein_files in os.walk(pdb_dir + os.sep + dir):
-                    for file in protein_files:
-                        full_path = path + os.sep + file
-                        if file.endswith('ligand.mol2') and not file.split("_")[0] in bad_data:
-                            g = mol2_file_to_torch_geometric(full_path)
-                            #torchgeom_plot_3D(g, 90)
-                            ligands.append(g)
-        data_list = ligands
+        # Read data into huge `Data` list. and save
+        graphs = process_dir(self.raw_dir, 'ligand.mol2', mol2_file_to_torch_geometric, bad_data)
+
         if self.pre_filter is not None:
-            data_list = [data for data in data_list if self.pre_filter(data)]
+            graphs = [g for g in graphs if self.pre_filter(g)]
 
         if self.pre_transform is not None:
-            data_list = [self.pre_transform(data) for data in data_list]
+            graphs = [self.pre_transform(g) for g in graphs]
 
-        data, slices = self.collate(data_list)
+        data, slices = self.collate(graphs)
         torch.save((data, slices), self.processed_paths[0])
-
 
 class PocketDataset(InMemoryDataset):
     def __init__(self, root, transform=None, pre_transform=None):
@@ -283,31 +290,17 @@ class PocketDataset(InMemoryDataset):
         return ['pockets.pt']
 
     def process(self):
-        # Read data into huge `Data` list.
-        pockets = []
-        for _, dirs, _ in os.walk(pdb_dir):
-            i = 0
-            total = len(dirs)
-            for dir in dirs:
-                i += 1
-                print('(' + str(int(100 * i / total)) + '%) Processing ' + dir)
-                for path, _, protein_files in os.walk(pdb_dir + os.sep + dir):
-                    for file in protein_files:
-                        full_path = path + os.sep + file
-                        if file.endswith('pocket.pdb') and not file.split("_")[0] in bad_data:
-                            g = pdb_file_to_torch_geometric(full_path)
-                            #torchgeom_plot_3D(g, 90)
-                            pockets.append(g)
-        data_list = pockets
+        # Read data into huge `Data` list. and save
+        graphs = process_dir(self.raw_dir, 'pocket.pdb', pdb_file_to_torch_geometric, bad_data)
+
         if self.pre_filter is not None:
-            data_list = [data for data in data_list if self.pre_filter(data)]
+            graphs = [g for g in graphs if self.pre_filter(g)]
 
         if self.pre_transform is not None:
-            data_list = [self.pre_transform(data) for data in data_list]
+            graphs = [self.pre_transform(g) for g in graphs]
 
-        data, slices = self.collate(data_list)
+        data, slices = self.collate(graphs)
         torch.save((data, slices), self.processed_paths[0])
-
 
 d = PocketDataset(root='./datasets')
 #g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1g7v/1g7v_pocket.pdb')
