@@ -28,7 +28,7 @@ setup(
     description="Machine Learning Library Extensions",
     author="Pavol Drotar",
     author_email="pavol.drotar3@gmail.com",
-    url="https://github.com/a-r-j/graphein",
+    url="https://github.com/padr31/linking/",
     packages=find_packages(),
     package_data={"": ["LICENSE.txt", "README.md", "requirements.txt"]},
     include_package_data=True,
