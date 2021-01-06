@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
 
 from data.torchgeom_pdb_loader import LigandDataset
 
 
 def create_data(config: Config, device: torch.device):
-    path = os.join(os.dirname(osp.realpath(__file__)), "..", "data", "Planetoid")
-    dataset = LigandDataset(root="./datasets")
-
+    dataset = LigandDataset(root="/Users/padr/repos/linking/datasets")
+'''
     d = []
     for data in dataset:
         data.train_mask = data.val_mask = data.test_mask = data.y = None
@@ -18,3 +16,5 @@ def create_data(config: Config, device: torch.device):
         d.append(data)
 
     return d
+'''
+create_data(None, None)

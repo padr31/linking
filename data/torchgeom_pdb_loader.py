@@ -89,10 +89,19 @@ allowable_rdkit_bonds = [
 ]
 
 
+def to_one_hot(x, allowable_set):
+    """
+    Function for one hot encoding
+    :param x: value to one-hot
+    :param allowable_set: set of options to encode
+    :return: one-hot encoding as torch tensor
+    """
+    return [1 if x == s else 0 for s in allowable_set]
+
 def featurise_ligand_atoms(atoms_df):
     atoms_df["atom_id"] = atoms_df["atom_id"] - 1
     atoms_df.loc[:, "atom_type"] = atoms_df["atom_type"].apply(
-        lambda a: allowable_atoms.index(a.split(".")[0])
+        lambda a: to_one_hot(a.split(".")[0], allowable_atoms)
     )
 
 
@@ -100,7 +109,7 @@ def featurise_ligand_bonds(bonds_df):
     bonds_df.loc[:, "atom1"] = bonds_df["atom1"].apply(lambda s: int(s) - 1)
     bonds_df.loc[:, "atom2"] = bonds_df["atom2"].apply(lambda s: int(s) - 1)
     bonds_df.loc[:, "bond_type"] = bonds_df["bond_type"].apply(
-        lambda b: allowable_bonds.index(b)
+        lambda b: to_one_hot(b, allowable_bonds)
     )
 
 
@@ -138,7 +147,7 @@ def mol2_file_to_torch_geometric(path):
     bonds = pd.concat([bonds, bonds_other_direction])
 
     features = [
-        torch.tensor([float(i) for i in atoms[feat].tolist()], dtype=torch.float)
+        torch.tensor([f for f in atoms[feat].tolist()], dtype=torch.float)
         for feat in ["atom_id", "x", "y", "z", "atom_type"]
     ]
     features = [f.unsqueeze(dim=1) if len(f.shape) == 1 else f for f in features]
@@ -146,7 +155,7 @@ def mol2_file_to_torch_geometric(path):
 
     # Get edge features from DGL graph and concatenate them
     edge_features = [
-        torch.tensor([float(edge) for edge in bonds[feat].tolist()], dtype=torch.float)
+        torch.tensor([edge for edge in bonds[feat].tolist()], dtype=torch.float)
         for feat in ["bond_type"]
     ]
     edge_features = [
@@ -177,7 +186,7 @@ def mol2_file_to_dgl(path):
 def pdb_file_to_torch_geometric(path):
     mol = Chem.MolFromPDBFile(path)
 
-    # add hydrogens
+    # TODO: add hydrogens?
     atoms = PandasPdb().read_pdb(path).df
 
     node_features = []
@@ -248,7 +257,7 @@ def process_dir(dir, file_ending, graph_constructor, bad_data):
             "(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path)
         )
         g = graph_constructor(path)
-        torchgeom_plot_3D(g, 90)
+        #torchgeom_plot_3D(g, 90)
         graphs.append(g)
 
     return graphs
@@ -304,8 +313,9 @@ class PocketDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-d = PocketDataset(root="./datasets")
+# d = PocketDataset(root="./datasets")
 # g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1g7v/1g7v_pocket.pdb')
 # torchgeom_plot_3D(g, 0)
-# g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_mol.mol2')
+g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
+
 # torchgeom_plot_3D(g, 0)
