@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 
+from data.torchgeom_pdb_loader import LigandDataset
+
 
 def create_data(config: Config, device: torch.device):
-    path = osp.join(osp.dirname(osp.realpath(__file__)), "..", "data", "Planetoid")
+    path = os.join(os.dirname(osp.realpath(__file__)), "..", "data", "Planetoid")
     dataset = LigandDataset(root="./datasets")
 
     d = []
