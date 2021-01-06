@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 
-from data.torchgeom_pdb_loader import LigandDataset
+from data.torchgeom_pdb_loader import LigandDataset, PocketDataset
 
 
 def create_data(config: Config, device: torch.device):
-    dataset = LigandDataset(root="/Users/padr/repos/linking/datasets")
+    dataset = PocketDataset(root="/Users/padr/repos/linking/datasets")
 '''
     d = []
     for data in dataset:

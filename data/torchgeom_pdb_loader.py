@@ -199,14 +199,13 @@ def pdb_file_to_torch_geometric(path):
         if pdb_loc > num_atoms:
             continue
         pandas_atom = atoms["ATOM"].iloc[[pdb_loc]]
-
         feature_vector = [
             atom.GetIdx(),
             float(pandas_atom["x_coord"]),
             float(pandas_atom["y_coord"]),
             float(pandas_atom["z_coord"]),
-            allowable_atoms.index(atom.GetSymbol()),
         ]
+        feature_vector.extend(to_one_hot(atom.GetSymbol(), allowable_atoms))
         node_features.append(feature_vector)
 
     # Add edges
@@ -226,8 +225,8 @@ def pdb_file_to_torch_geometric(path):
             continue
         edge_src.extend([u, v])
         edge_dst.extend([v, u])
-        type = allowable_rdkit_bonds.index(bond.GetBondType())
-        edge_types.extend([[type], [type]])
+        type = to_one_hot(bond.GetBondType(), allowable_rdkit_bonds)
+        edge_types.extend([type, type])
 
     # Create the Torch Geometric graph
     geom_graph = data.Data(
@@ -314,8 +313,7 @@ class PocketDataset(InMemoryDataset):
 
 
 # d = PocketDataset(root="./datasets")
-# g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1g7v/1g7v_pocket.pdb')
-# torchgeom_plot_3D(g, 0)
-g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
+# g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb')
+#g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
 
 # torchgeom_plot_3D(g, 0)
