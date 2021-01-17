@@ -1,8 +1,9 @@
 from __future__ import annotations
-
 from typing import Tuple
-
 from torch_geometric.nn import GCNConv
+import torch
+import torch.nn.functional as F
+
 
 
 class LinearEncoder(torch.nn.Module):
@@ -22,3 +23,13 @@ class VariationalLinearEncoder(torch.nn.Module):
 
     def forward(self, x, edge_index) -> Tuple[torch.Tensor, 0]:
         return self.conv_mu(x, edge_index), self.conv_logstd(x, edge_index)
+
+class LinearAtomLabelClassifier(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int) -> None:
+        super(LinearAtomLabelClassifier, self).__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+        self.out_channels = out_channels
+
+    def forward(self, x):
+        x = self.linear(x)
+        return F.one_hot(torch.argmax(F.softmax(x, dim=1), dim=1), num_classes=self.out_channels)

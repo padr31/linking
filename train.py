@@ -1,8 +1,6 @@
 import argparse
 import json
-
 import torch
-
 from linking.config.config import Config
 from linking.data.dataloader import create_data
 from linking.model.build_model import build_model
@@ -14,14 +12,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--config",
-        default="/Users/arianjamasb/github/linking/config/default_config.json",
+        default="/Users/padr/repos/linking/configs/default_config.json",
         help="Path to project config file",
         required=False,
     )
     args = parser.parse_args()
 
     # parse json to dict
-    config = json.load(args.config)
+    with open(args.config) as json_config:
+        config = json.load(json_config)
 
     # Create config object
     config = Config()
@@ -33,7 +32,7 @@ if __name__ == "__main__":
     data = create_data(config=config, device=device)
 
     # Create Model
-    model = create_model(config=config)
+    model = build_model(config=config)
     model = model.to(device)
 
     # Create optimizer
@@ -44,3 +43,4 @@ if __name__ == "__main__":
 
     # Train
     trainer.train()
+    trainer.test()

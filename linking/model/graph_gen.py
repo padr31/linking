@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from pdb_loader import LigandDataset
+from linking.data.pdb_loader import LigandDataset
 from torch_geometric.nn import GCNConv
 from torch_geometric.utils import train_test_split_edges
 

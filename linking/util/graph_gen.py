@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 from torch_geometric.utils import train_test_split_edges
-from pdb_loader import LigandDataset
+from linking.data.pdb_loader import LigandDataset
 
 dataset = LigandDataset(root='./datasets')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

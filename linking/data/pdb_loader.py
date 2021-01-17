@@ -302,7 +302,7 @@ class PocketDataset(InMemoryDataset):
         data, slices = self.collate(graphs)
         torch.save((data, slices), self.processed_paths[0])
 
-d = PocketDataset(root='./datasets')
+#d = PocketDataset(root='./datasets')
 #g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1g7v/1g7v_pocket.pdb')
 #torchgeom_plot_3D(g, 0)
 #g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_mol.mol2')

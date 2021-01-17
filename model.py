@@ -1,13 +1,9 @@
 
 import os.path as osp
-import argparse
 import torch
-import torch_geometric.transforms as T
-from torch_geometric.nn import GCNConv, GAE, VGAE
+from torch_geometric.nn import GCNConv, VGAE
 from torch_geometric.utils import train_test_split_edges
-from pdb_loader import LigandDataset
-from torch_geometric.data import DataLoader
-
+from linking.data.pdb_loader import LigandDataset
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Planetoid')
 dataset = LigandDataset(root='./datasets')
