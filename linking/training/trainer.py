@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Dict, Tuple
 
 import torch
-
+from linking.layers.gcn_encoders import GCNEncoder
+from torch_geometric.data import Data
 from linking.config.config import Config
+from linking.data.pdb_loader import torchgeom_plot
 
 
 class Trainer:
@@ -25,18 +27,26 @@ class Trainer:
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
             self.optimizer.zero_grad()
-            '''print(str(i) + " ----- ")
-            print("Ligand")
-            print(x_ligand)
-            print("Pocket")
-            print(x_pocket)'''
-            z_pocket, z_ligand = self.model(x_pocket, x_ligand)
-            loss_f = torch.nn.L1Loss()
-            loss = loss_f(z_pocket, z_ligand)
+            loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms, out_channels=self.config.ligand_encoder_out_channels)
+            prediction = self.model(x_pocket, x_ligand)
+            if i == 0:
+                torchgeom_plot(Data(x=prediction[0], edge_index=prediction[1]))
+            loss_f = torch.nn.MSELoss()
+            indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)
+            x_ligand_x = torch.index_select(x_ligand.x, 1, indices)
+
+            truth = loss_enc(x_ligand_x, x_ligand.edge_index)
+            truth = torch.sum(truth, dim=0)
+
+            pred = loss_enc(prediction[0], prediction[1])
+            pred = torch.sum(pred, dim=0)
+
+            loss = loss_f(pred, truth)
             loss.backward()
+
             self.optimizer.step()
             total_loss += loss.item()
-        return float(total_loss)
+        return float(total_loss/len(self.X_ligand_train))
 
     def train(self) -> None:
         for epoch in range(1, self.config.num_epochs):
@@ -57,13 +67,25 @@ class Trainer:
     def test(self) -> None:
             total_loss = 0
             for i in range(len(self.X_ligand_test)-1):
-                x_ligand = self.X_ligand_test[i]
+                x_ligand = self.X_ligand_test[i+1]
                 x_pocket = self.X_pocket_test[i+1]
                 self.model.eval()
                 with torch.no_grad():
-                    z_pocket, z_ligand = self.model(x_pocket, x_ligand)
-                    loss_f = torch.nn.L1Loss()
-                    loss = loss_f(z_pocket, z_ligand)
+                    loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms,
+                                          out_channels=self.config.ligand_encoder_out_channels)
+                    prediction = self.model(x_pocket, x_ligand)
+                    #torchgeom_plot(Data(x=prediction[0], edge_index=prediction[1]))
+                    loss_f = torch.nn.MSELoss()
+                    indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)
+                    x_ligand_x = torch.index_select(x_ligand.x, 1, indices)
+
+                    truth = loss_enc(x_ligand_x, x_ligand.edge_index)
+                    truth = torch.sum(truth, dim=0)
+
+                    pred = loss_enc(prediction[0], prediction[1])
+                    pred = torch.sum(pred, dim=0)
+
+                    loss = loss_f(pred, truth)
                 total_loss += loss
 
             print("Loss on test set: {:.4f}".format(total_loss / len(self.X_ligand_test)))

@@ -10,8 +10,10 @@ def train_test_split(dataset, num_train, train_test_ratio, device):
     X_test = []
     i = 0
     for data in dataset:
-        data.train_mask = data.val_mask = data.test_mask = data.y = None
+        data.train_mask = data.val_mask = data.test_mask = None
         data.x = data.x.to(device)
+        if data.y != None:
+            data.y = data.y.to(device)
         data.edge_index = data.edge_index.to(device)
         if i < num_train:
             X_train.append(data)

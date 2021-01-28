@@ -134,7 +134,7 @@ def mol2_file_to_networkx(path):
     return g
 
 
-def mol2_file_to_torch_geometric(path):
+def mol2_file_to_torch_geometric(path, affinities):
     bonds = parse_bonds(path)
     atoms = PandasMol2().read_mol2(path).df
     featurise_ligand_atoms(atoms)
@@ -183,7 +183,7 @@ def mol2_file_to_dgl(path):
     return g
 
 
-def pdb_file_to_torch_geometric(path):
+def pdb_file_to_torch_geometric(path, affinities):
     mol = Chem.MolFromPDBFile(path)
 
     # TODO: add hydrogens?
@@ -229,15 +229,24 @@ def pdb_file_to_torch_geometric(path):
         edge_types.extend([type, type])
 
     # Create the Torch Geometric graph
+    if len(affinities.loc[affinities['PDB'] == path.split('/')[3]]) == 0:
+        d = 0
+        print('zero')
+    else:
+        print('non-zero')
+        d = affinities.loc[affinities['PDB'] == path.split('/')[3]].groupby('PDB').mean()['pbindaff'].item()
     geom_graph = data.Data(
         x=torch.tensor(node_features, dtype=torch.float),
         edge_index=torch.tensor([edge_src, edge_dst], dtype=torch.long).contiguous(),
         edge_attr=torch.tensor(edge_types, dtype=torch.float).contiguous(),
+        y=torch.tensor([d], dtype=torch.float)
     )
     return geom_graph
 
 
 def process_dir(dir, file_ending, graph_constructor, bad_data):
+    affinities = pd.read_csv('datasets/raw/affinities')
+
     # Read data into huge `Data` list.
     files_to_process = []
     for path, dirs, files in os.walk(dir):
@@ -255,7 +264,7 @@ def process_dir(dir, file_ending, graph_constructor, bad_data):
         print(
             "(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path)
         )
-        g = graph_constructor(path)
+        g = graph_constructor(path, affinities)
         #torchgeom_plot_3D(g, 90)
         graphs.append(g)
 
@@ -312,7 +321,7 @@ class PocketDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-# d = PocketDataset(root="./datasets")
+d = PocketDataset(root="./datasets")
 # g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb')
 #g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
 

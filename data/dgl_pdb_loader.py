@@ -89,7 +89,6 @@ def load_dataset(args):
 
     return dataset, train_set, test_set
 
-
 args = {
     "subset": "core",
     "load_binding_pocket": True,

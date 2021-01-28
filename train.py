@@ -36,7 +36,7 @@ if __name__ == "__main__":
     model = model.to(device)
 
     # Create optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
     # Create Trainer
     trainer = Trainer(model=model, data=data, optimizer=optimizer, config=config)
