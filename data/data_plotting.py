@@ -4,6 +4,28 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
+import torch
+import networkx as nx
+from torch_geometric.utils.convert import to_networkx
+
+def torchgeom_plot(graph):
+    def to_atom(t):
+        return ['C', 'F', 'N', 'Cl', 'O', 'I', 'P', 'Br', 'S', 'H', 'Stop'][
+            int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float)).item())
+        ]
+
+    G = to_networkx(graph)
+    # Need to create a layout when doing
+    # separate calls to draw nodes and edges
+    pos = nx.spring_layout(G)
+    G.remove_nodes_from(list(nx.isolates(G)))
+    label_dict = {}
+    for n in nx.nodes(G):
+        label_dict[n] = to_atom(graph.x[n])
+    nx.draw(G, pos, cmap=plt.get_cmap('jet'), node_size=300, with_labels = True, labels=label_dict)
+    #nx.draw_networkx_labels(G, pos)
+    nx.draw_networkx_edges(G, pos)
+    plt.show()
 
 def networkx_plot_3D(G, angle):
     # Get node positions

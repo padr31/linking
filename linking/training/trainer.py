@@ -6,7 +6,7 @@ import torch
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data
 from linking.config.config import Config
-from linking.data.pdb_loader import torchgeom_plot
+from data.data_plotting import torchgeom_plot
 
 
 class Trainer:
@@ -26,10 +26,11 @@ class Trainer:
         for i in range(len(self.X_ligand_train)):
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
+            assert x_ligand.name.split('/')[-1].split('_')[0] == x_pocket.name.split('/')[-1].split('_')[0]
             self.optimizer.zero_grad()
             loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms, out_channels=self.config.ligand_encoder_out_channels)
             prediction = self.model(x_pocket, x_ligand)
-            if i == 0:
+            if i == 0 or i == 1 or i == 2:
                 torchgeom_plot(Data(x=prediction[0], edge_index=prediction[1]))
             loss_f = torch.nn.MSELoss()
             indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)

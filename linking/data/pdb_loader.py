@@ -12,7 +12,6 @@ from torch_geometric.data import InMemoryDataset
 import dgl
 import torch
 from rdkit import Chem
-from torch_geometric.utils.convert import to_networkx
 
 pdb_dir = './datasets/raw/refined-set'
 bad_data = ['1g7v', '1r1h', '2a5b', '2zjw', '1cps', '4abd']
@@ -56,17 +55,6 @@ def networkx_plot_3D(G, angle):
 
     plt.show()
     return
-
-def torchgeom_plot(graph):
-    G = to_networkx(graph)
-    # Need to create a layout when doing
-    # separate calls to draw nodes and edges
-    pos = nx.spring_layout(G)
-    nx.draw_networkx_nodes(G, pos, cmap=plt.get_cmap('jet'), node_size=500)
-    #nx.draw_networkx_labels(G, pos)
-    nx.draw_networkx_edges(G, pos)
-    plt.show()
-
 
 def torchgeom_plot_3D(graph, angle):
     # Get node positions

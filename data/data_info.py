@@ -6,6 +6,9 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 
+from data.torchgeom_pdb_loader import parse_bonds
+
+
 def moltosvg(mol, molSize = (300,300), kekulize = True):
     mc = Chem.Mol(mol.ToBinary())
     if kekulize:
@@ -44,38 +47,61 @@ for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/raw/refined
     for file in files:
         if not (file.endswith('_ligand.mol2') or file.endswith('_ligand.sdf') or file.endswith('_pocket.pdb') or file.endswith('_protein.pdb')):
             print(file)
-        if file.endswith('.mol2') and not file.split("_")[0] in bad_data:
+        if file.endswith('ligand.mol2') and not file.split("_")[0] in bad_data:
             full_path = path + os.sep + file
             files_to_process.append(full_path)
 
-graphs = []
-total = len(files_to_process)
-print("Starting to process " + str(total) + " files...")
-i = 0
-total_atoms = 0
-good_atoms = 0
-atoms = {"C"}
-for path in sorted(files_to_process):
-    i += 1
-    mol = Chem.MolFromMol2File(path)
-    try:
-        frags = get_components(mol)
-        total_atoms += frags[1]
-        good_atoms += 1
+def getAtomTypes():
+    graphs = []
+    total = len(files_to_process)
+    print("Starting to process " + str(total) + " files...")
+    i = 0
+    total_atoms = 0
+    good_atoms = 0
+    atoms = {"C"}
+    for path in sorted(files_to_process):
+        i += 1
+        mol = Chem.MolFromPDBFile(path)
+        try:
+            #frags = get_components(mol)
+            #total_atoms += frags[1]
+            #good_atoms += 1
 
-        for atom in mol.GetAtoms():
-            type = atom.GetSymbol()
-            atoms.add(type)
+            for atom in mol.GetAtoms():
+                type = atom.GetSymbol()
+                atoms.add(type)
+
+            print(
+                "(" + str(int(100 * i / total)) + "%) File " + os.path.basename(
+                   path) + " has X fragments and the largest is of size Y: "# + str(frags)
+             )
+        except:
+            print(
+                "(" + str(int(100 * i / total)) + "%) File " + os.path.basename(
+                    path) + " has an exception."
+            )
+    #print("Average number of atoms in a ligand: " + str(total_atoms/good_atoms))
+    print("Set of atom types:")
+    print(atoms)
+
+def getBondTypes():
+    total = len(files_to_process)
+    print("Starting to process " + str(total) + " files...")
+    i = 0
+    bonds = {'1'}
+    for path in sorted(files_to_process):
+        i += 1
+        b = parse_bonds(path)
+        l = list(b.loc[:, "bond_type"].unique())
+        [bonds.add(x) for x in l]
 
         print(
             "(" + str(int(100 * i / total)) + "%) File " + os.path.basename(
-                path) + " has X fragments and the largest is of size Y: " + str(frags)
+                path)
         )
-    except:
-        print(
-            "(" + str(int(100 * i / total)) + "%) File " + os.path.basename(
-                path) + " has an exception."
-        )
-print("Average number of atoms in a ligand: " + str(total_atoms/good_atoms))
-print("Set of atom types:")
-print(atoms)
+
+    # print("Average number of atoms in a ligand: " + str(total_atoms/good_atoms))
+    print("Set of bond types:")
+    print(bonds)
+
+getBondTypes()

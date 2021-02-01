@@ -30,7 +30,7 @@ def parse_bonds(filename):
         df_bonds.set_index(["bond_id"], inplace=True)
         return df_bonds
 
-
+'''
 allowable_atoms = [
     "C",
     "N",
@@ -79,7 +79,10 @@ allowable_atoms = [
     "Du",
     "LP",
 ]
-allowable_bonds = ["ar", "1", "2", "3", "am", "du", "un", "nc"]
+'''
+
+allowable_atoms = ['C', 'F', 'N', 'Cl', 'O', 'I', 'P', 'Br', 'S', 'H', 'Stop']
+allowable_ligand_bonds = ["1", "2", "3", "ar", "am"]
 
 allowable_rdkit_bonds = [
     Chem.rdchem.BondType.AROMATIC,
@@ -88,15 +91,33 @@ allowable_rdkit_bonds = [
     Chem.rdchem.BondType.TRIPLE,
 ]
 
+ligand_bond_to_one_hot = {
+    "1": [1., 0., 0.],
+    "2": [0., 1., 0.],
+    "3": [0., 0., 1.],
+    "ar": [1., 0., 0.],
+    "am": [1., 0., 0.],
+}
 
-def to_one_hot(x, allowable_set):
+pocket_bond_to_one_hot = {
+    Chem.rdchem.BondType.AROMATIC: [1., 0., 0.],
+    Chem.rdchem.BondType.SINGLE: [1., 0., 0.],
+    Chem.rdchem.BondType.DOUBLE: [0., 1., 0.],
+    Chem.rdchem.BondType.TRIPLE: [0., 0., 1.],
+}
+
+def to_one_hot(x, allowable_set=None, mapping=None):
     """
     Function for one hot encoding
     :param x: value to one-hot
     :param allowable_set: set of options to encode
+    :param mapping: mapping from x to one hot, preferred over allowable set
     :return: one-hot encoding as torch tensor
     """
-    return [1 if x == s else 0 for s in allowable_set]
+    if not mapping is None:
+        return mapping[x].copy()
+    else:
+        return [1 if x == s else 0 for s in allowable_set]
 
 def featurise_ligand_atoms(atoms_df):
     atoms_df["atom_id"] = atoms_df["atom_id"] - 1
@@ -109,7 +130,7 @@ def featurise_ligand_bonds(bonds_df):
     bonds_df.loc[:, "atom1"] = bonds_df["atom1"].apply(lambda s: int(s) - 1)
     bonds_df.loc[:, "atom2"] = bonds_df["atom2"].apply(lambda s: int(s) - 1)
     bonds_df.loc[:, "bond_type"] = bonds_df["bond_type"].apply(
-        lambda b: to_one_hot(b, allowable_bonds)
+        lambda b: to_one_hot(b, mapping=ligand_bond_to_one_hot)
     )
 
 
@@ -153,7 +174,7 @@ def mol2_file_to_torch_geometric(path, affinities):
     features = [f.unsqueeze(dim=1) if len(f.shape) == 1 else f for f in features]
     node_features = torch.cat(features, dim=1)
 
-    # Get edge features from DGL graph and concatenate them
+    # Get edge features and concatenate them
     edge_features = [
         torch.tensor([edge for edge in bonds[feat].tolist()], dtype=torch.float)
         for feat in ["bond_type"]
@@ -170,6 +191,7 @@ def mol2_file_to_torch_geometric(path, affinities):
             [bonds["atom1"].tolist(), bonds["atom2"].tolist()], dtype=torch.long
         ).contiguous(),
         edge_attr=edge_features,
+        name=path
     )
     return geom_graph
 
@@ -225,7 +247,7 @@ def pdb_file_to_torch_geometric(path, affinities):
             continue
         edge_src.extend([u, v])
         edge_dst.extend([v, u])
-        type = to_one_hot(bond.GetBondType(), allowable_rdkit_bonds)
+        type = to_one_hot(bond.GetBondType(), mapping=pocket_bond_to_one_hot)
         edge_types.extend([type, type])
 
     # Create the Torch Geometric graph
@@ -239,13 +261,14 @@ def pdb_file_to_torch_geometric(path, affinities):
         x=torch.tensor(node_features, dtype=torch.float),
         edge_index=torch.tensor([edge_src, edge_dst], dtype=torch.long).contiguous(),
         edge_attr=torch.tensor(edge_types, dtype=torch.float).contiguous(),
-        y=torch.tensor([d], dtype=torch.float)
+        y=torch.tensor([d], dtype=torch.float),
+        name=path
     )
     return geom_graph
 
 
 def process_dir(dir, file_ending, graph_constructor, bad_data):
-    affinities = pd.read_csv('datasets/raw/affinities')
+    affinities = pd.read_csv('/Users/padr/repos/linking/datasets/raw/affinities')
 
     # Read data into huge `Data` list.
     files_to_process = []
@@ -321,7 +344,7 @@ class PocketDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-d = PocketDataset(root="./datasets")
+d = LigandDataset(root="/Users/padr/repos/linking/datasets")
 # g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb')
 #g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
 

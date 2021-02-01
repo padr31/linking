@@ -45,9 +45,10 @@ class LinearEdgeSelector(torch.nn.Module):
         super(LinearEdgeSelector, self).__init__()
         self.linear = torch.nn.Linear(in_channels, 1)
 
-    def forward(self, x):
+    def forward(self, x, mask):
         x = self.linear(x)
         x = F.relu(x)
+        x = x + mask
         x = F.gumbel_softmax(x, hard=True, dim=0)
         x = x.squeeze(1)
         x = x.long()
@@ -56,18 +57,19 @@ class LinearEdgeSelector(torch.nn.Module):
 
 class LinearEdgeClassifier(torch.nn.Module):
     '''
-       One edge is passed in as phi(u,v) = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, z_g]
+        Edges are passed in as features of type phi(u,v) = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, z_g]
         We reduce the vector into 3 numbers, and return the argmax, as
     '''
     def __init__(self, in_channels: int) -> None:
         super(LinearEdgeClassifier, self).__init__()
         self.linear = torch.nn.Linear(in_channels, 3)
 
-    def forward(self, x):
+    def forward(self, x, mask):
         x = self.linear(x)
         x = F.relu(x)
+        x = x + mask
         x = F.gumbel_softmax(x, hard=True, dim=1)
-        return torch.flatten(x)
+        return x
 
 class LinearScorePredictor(torch.nn.Module):
     def __init__(self, in_channels: int) -> None:
