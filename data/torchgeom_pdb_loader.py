@@ -10,7 +10,9 @@ from biopandas.pdb import PandasPdb
 from rdkit import Chem
 from torch_geometric import data
 from torch_geometric.data import InMemoryDataset
-from data.data_plotting import torchgeom_plot_3D
+from torch_geometric.utils.convert import to_networkx
+import matplotlib.pyplot as plt
+
 
 pdb_dir = "./datasets/raw/refined-set"
 bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
@@ -29,57 +31,6 @@ def parse_bonds(filename):
         )
         df_bonds.set_index(["bond_id"], inplace=True)
         return df_bonds
-
-'''
-allowable_atoms = [
-    "C",
-    "N",
-    "O",
-    "S",
-    "F",
-    "Si",
-    "P",
-    "Cl",
-    "Br",
-    "Mg",
-    "Na",
-    "Ca",
-    "Fe",
-    "As",
-    "Al",
-    "I",
-    "B",
-    "V",
-    "K",
-    "Tl",
-    "Yb",
-    "Sb",
-    "Sn",
-    "Ag",
-    "Pd",
-    "Co",
-    "Se",
-    "Ti",
-    "Zn",
-    "H",
-    "Li",
-    "Ge",
-    "Cu",
-    "Au",
-    "Ni",
-    "Cd",
-    "In",
-    "Mn",
-    "Zr",
-    "Cr",
-    "Pt",
-    "Hg",
-    "Pb",
-    "H",
-    "Du",
-    "LP",
-]
-'''
 
 allowable_atoms = ['C', 'F', 'N', 'Cl', 'O', 'I', 'P', 'Br', 'S', 'H', 'Stop']
 allowable_ligand_bonds = ["1", "2", "3", "ar", "am"]
@@ -125,14 +76,12 @@ def featurise_ligand_atoms(atoms_df):
         lambda a: to_one_hot(a.split(".")[0], allowable_atoms)
     )
 
-
 def featurise_ligand_bonds(bonds_df):
     bonds_df.loc[:, "atom1"] = bonds_df["atom1"].apply(lambda s: int(s) - 1)
     bonds_df.loc[:, "atom2"] = bonds_df["atom2"].apply(lambda s: int(s) - 1)
     bonds_df.loc[:, "bond_type"] = bonds_df["bond_type"].apply(
         lambda b: to_one_hot(b, mapping=ligand_bond_to_one_hot)
     )
-
 
 def mol2_file_to_networkx(path):
     bonds = parse_bonds(path)
@@ -154,6 +103,33 @@ def mol2_file_to_networkx(path):
 
     return g
 
+def bfs(geom_graph):
+    G = to_networkx(geom_graph, to_undirected=True)
+
+    '''
+    l = nx.spring_layout(G)
+    if geom_graph.name.endswith('10gs_ligand.mol2'):
+        n_list = []
+        print([(u, v) if not (u,v) in G.edges else 'ok' for (u, v) in nx.bfs_edges(G, 0)])
+        for (u,v) in nx.bfs_edges(G, 0):
+            n_list.append(u)
+            n_list.append(v)
+            nx.draw_networkx(G, nodelist=n_list, pos=l)
+            plt.show()
+    '''
+    bfs_edges = list(nx.bfs_edges(G, 0))
+
+    # build attribute map
+    attrib_map = {}
+    for i in range(geom_graph.edge_index.size(1)):
+        attrib_map[str((geom_graph.edge_index[0][i].item(), geom_graph.edge_index[1][i].item()))] = geom_graph.edge_attr[i]
+
+    # add edge attributes
+    bfs_attributes = []
+    for e in bfs_edges:
+        bfs_attributes.append(attrib_map[str(e)])
+
+    return [torch.tensor([e[0], e[1]], dtype=torch.long) for e in bfs_edges], bfs_attributes
 
 def mol2_file_to_torch_geometric(path, affinities):
     bonds = parse_bonds(path)
@@ -191,10 +167,13 @@ def mol2_file_to_torch_geometric(path, affinities):
             [bonds["atom1"].tolist(), bonds["atom2"].tolist()], dtype=torch.long
         ).contiguous(),
         edge_attr=edge_features,
-        name=path
+        name=path,
+        bfs_index=None,
+        bfs_attr=None,
     )
-    return geom_graph
 
+    geom_graph.bfs_index, geom_graph.bfs_attr = bfs(geom_graph)
+    return geom_graph
 
 def mol2_file_to_dgl(path):
     nxg = mol2_file_to_networkx(path)
@@ -264,8 +243,8 @@ def pdb_file_to_torch_geometric(path, affinities):
         y=torch.tensor([d], dtype=torch.float),
         name=path
     )
-    return geom_graph
 
+    return geom_graph
 
 def process_dir(dir, file_ending, graph_constructor, bad_data):
     affinities = pd.read_csv('/Users/padr/repos/linking/datasets/raw/affinities')
@@ -344,8 +323,8 @@ class PocketDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-d = LigandDataset(root="/Users/padr/repos/linking/datasets")
+# d = LigandDataset(root="/Users/padr/repos/linking/datasets")
 # g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb')
-#g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
+# g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
 
 # torchgeom_plot_3D(g, 0)

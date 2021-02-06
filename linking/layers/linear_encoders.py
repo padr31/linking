@@ -4,8 +4,6 @@ from torch_geometric.nn import GCNConv
 import torch
 import torch.nn.functional as F
 
-
-
 class LinearEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super(LinearEncoder, self).__init__()
@@ -13,7 +11,6 @@ class LinearEncoder(torch.nn.Module):
 
     def forward(self, x, edge_index) -> Tuple[torch.Tensor, 0]:
         return self.conv(x, edge_index), 0
-
 
 class VariationalLinearEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int) -> None:
@@ -30,11 +27,15 @@ class LinearAtomClassifier(torch.nn.Module):
         self.linear = torch.nn.Linear(in_channels, out_channels)
         self.out_channels = out_channels
 
-    def forward(self, x):
+    def forward(self, x, gumbel=False):
         x = self.linear(x)
         x = F.relu(x)
-        #return F.one_hot(torch.argmax(F.softmax(x, dim=1), dim=1), num_classes=self.out_channels)
-        return F.gumbel_softmax(x, hard=True, dim=1) # no need for one hot, we do it at the end
+        # return F.one_hot(torch.argmax(F.softmax(x, dim=1), dim=1), num_classes=self.out_channels)
+        if gumbel:
+            x = F.gumbel_softmax(x, hard=True, dim=1)
+        else:
+            x = F.softmax(x, dim=1)
+        return x
 
 class LinearEdgeSelector(torch.nn.Module):
     '''
@@ -45,14 +46,18 @@ class LinearEdgeSelector(torch.nn.Module):
         super(LinearEdgeSelector, self).__init__()
         self.linear = torch.nn.Linear(in_channels, 1)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask=None, gumbel=False):
         x = self.linear(x)
         x = F.relu(x)
-        x = x + mask
-        x = F.gumbel_softmax(x, hard=True, dim=0)
-        x = x.squeeze(1)
-        x = x.long()
-        x = x.dot(torch.tensor(range(0, x.size()[0])).long())
+        if not mask is None:
+            x = x + mask
+        if gumbel:
+            x = F.gumbel_softmax(x, hard=True, dim=0)
+            x = x.squeeze(1)
+            x = x.long()
+            x = x.dot(torch.tensor(range(0, x.size()[0])).long())
+        else:
+            x = F.softmax(x, dim=0)
         return x
 
 class LinearEdgeClassifier(torch.nn.Module):
@@ -64,11 +69,16 @@ class LinearEdgeClassifier(torch.nn.Module):
         super(LinearEdgeClassifier, self).__init__()
         self.linear = torch.nn.Linear(in_channels, 3)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask=None, gumbel=False):
         x = self.linear(x)
         x = F.relu(x)
-        x = x + mask
-        x = F.gumbel_softmax(x, hard=True, dim=1)
+        if not mask is None:
+            x = x + mask
+
+        if gumbel:
+            x = F.gumbel_softmax(x, hard=True, dim=1)
+        else:
+            x = F.softmax(x, dim=1)
         return x
 
 class LinearScorePredictor(torch.nn.Module):

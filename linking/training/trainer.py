@@ -28,6 +28,13 @@ class Trainer:
             x_pocket = self.X_pocket_train[i]
             assert x_ligand.name.split('/')[-1].split('_')[0] == x_pocket.name.split('/')[-1].split('_')[0]
             self.optimizer.zero_grad()
+
+            prediction = self.model(x_pocket, x_ligand)
+            loss_f = torch.nn.L1Loss()
+            loss = loss_f(-prediction, torch.tensor(0.0))
+
+
+            ''' loss for gumbel
             loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms, out_channels=self.config.ligand_encoder_out_channels)
             prediction = self.model(x_pocket, x_ligand)
             if i == 0 or i == 1 or i == 2:
@@ -43,6 +50,8 @@ class Trainer:
             pred = torch.sum(pred, dim=0)
 
             loss = loss_f(pred, truth)
+            '''
+
             loss.backward()
 
             self.optimizer.step()
@@ -76,7 +85,10 @@ class Trainer:
                                           out_channels=self.config.ligand_encoder_out_channels)
                     prediction = self.model(x_pocket, x_ligand)
                     #torchgeom_plot(Data(x=prediction[0], edge_index=prediction[1]))
-                    loss_f = torch.nn.MSELoss()
+                    loss_f = torch.nn.L1Loss()
+
+                    '''
+                    gumbel loss
                     indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)
                     x_ligand_x = torch.index_select(x_ligand.x, 1, indices)
 
@@ -85,8 +97,9 @@ class Trainer:
 
                     pred = loss_enc(prediction[0], prediction[1])
                     pred = torch.sum(pred, dim=0)
+                    '''
 
-                    loss = loss_f(pred, truth)
+                    loss = loss_f(prediction, torch.tensor(0.0))
                 total_loss += loss
 
             print("Loss on test set: {:.4f}".format(total_loss / len(self.X_ligand_test)))

@@ -4,15 +4,15 @@ class Config(BaseModel):
     # Core stuff
     root_dir: str = "/Users/padr/repos/linking/"
     dataset_root: str = "/Users/padr/repos/linking/datasets/"
-    num_epochs: int = 35
+    num_epochs: int = 100
     learning_rate: float = 0.001
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 400
+    num_train: int = 5
 
     # Model stuff
-    model: str = "MoleculeGenerator"  # "MoleculeGenerator"
+    model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
     num_allowable_atoms = 11
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4
