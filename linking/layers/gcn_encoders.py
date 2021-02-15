@@ -22,13 +22,13 @@ class GCNEncoder(torch.nn.Module):
 class VariationalGCNEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super(VariationalGCNEncoder, self).__init__()
-        self.conv1 = GCNConv(
+        self.conv1 = GATConv(
             in_channels, 2 * out_channels, cached=True, add_self_loops=False
         )
-        self.conv_mu = GCNConv(
+        self.conv_mu = GATConv(
             2 * out_channels, out_channels, cached=True, add_self_loops=False
         )
-        self.conv_logstd = GCNConv(
+        self.conv_logstd = GATConv(
             2 * out_channels, out_channels, cached=True, add_self_loops=False
         )
 

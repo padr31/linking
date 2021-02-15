@@ -129,7 +129,17 @@ def bfs(geom_graph):
     for e in bfs_edges:
         bfs_attributes.append(attrib_map[str(e)])
 
-    return [torch.tensor([e[0], e[1]], dtype=torch.long) for e in bfs_edges], bfs_attributes
+    edges_copy = []
+    attrib_copy = []
+    for i in range(len(bfs_edges)):
+        edges_copy.append(bfs_edges[i])
+        attrib_copy.append(bfs_attributes[i])
+        if i == len(bfs_edges)-1 or bfs_edges[i+1][0] != bfs_edges[i][0]:
+            edges_copy.append((bfs_edges[i][0], -1))
+            attrib_copy.append(torch.tensor([0., 0., 0.], dtype=torch.float))
+
+
+    return [torch.tensor([e[0], e[1]], dtype=torch.long) for e in edges_copy], attrib_copy
 
 def mol2_file_to_torch_geometric(path, affinities):
     bonds = parse_bonds(path)
@@ -323,7 +333,7 @@ class PocketDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-# d = LigandDataset(root="/Users/padr/repos/linking/datasets")
+d = LigandDataset(root="/Users/padr/repos/linking/datasets")
 # g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb')
 # g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
 
