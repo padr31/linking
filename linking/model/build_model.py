@@ -28,8 +28,9 @@ def build_forcer_model(config: Config) -> nn.Module:
     )
     linear_atom_classifier = LinearAtomClassifier(in_channels=config.ligand_encoder_out_channels, out_channels=config.num_allowable_atoms)
 
-    # [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, G]
-    edge_feature_size = 1 + config.pocket_encoder_out_channels + config.ligand_encoder_out_channels + 2*(config.graph_encoder_out_channels + config.num_allowable_atoms) + config.graph_encoder_out_channels
+    # [t, z_pocket, z_u, l_u, z_v, l_v, H_t, H_init]
+
+    edge_feature_size = 1 + config.pocket_encoder_out_channels + 2*(config.graph_encoder_out_channels + config.num_allowable_atoms) + (config.ligand_encoder_out_channels + config.num_allowable_atoms) + (config.graph_encoder_out_channels + config.num_allowable_atoms)
     linear_edge_selector = LinearEdgeSelector(edge_feature_size)
     linear_edge_classifier = LinearEdgeClassifier(edge_feature_size)
 

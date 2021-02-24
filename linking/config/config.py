@@ -5,11 +5,11 @@ class Config(BaseModel):
     root_dir: str = "/Users/padr/repos/linking/"
     dataset_root: str = "/Users/padr/repos/linking/datasets/"
     num_epochs: int = 100
-    learning_rate: float = 0.001
+    learning_rate: float = 0.002
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 5
+    num_train: int = 10
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
