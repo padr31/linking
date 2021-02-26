@@ -38,9 +38,9 @@ class Trainer:
                 generated_ligand = self.model.mol_to_svg(self.model.to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2])))
 
-                if epoch == 1:
-                    with open("out_svg/ligand_" + str(i) + "_" + str(x_ligand.name.split('/')[-1].split('_')[0]) + ".svg", "w") as svg_file:
-                        svg_file.write(ligand)
+                #if epoch == 1:
+                #    with open("out_svg/ligand_" + str(i) + "_" + str(x_ligand.name.split('/')[-1].split('_')[0]) + ".svg", "w") as svg_file:
+                #        svg_file.write(ligand)
                 with open("out_svg/generated_ligand_" + str(epoch) + ".svg", "w") as svg_file:
                    svg_file.write(generated_ligand)
 

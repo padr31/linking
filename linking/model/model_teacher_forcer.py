@@ -59,6 +59,12 @@ class TeacherForcer(torch.nn.Module):
                     mask_list[i][j-1] = 0
         return torch.stack(mask_list)
 
+    def calculate_label_mask(self, length):
+        l = [torch.tensor(0.0, dtype=torch.float) for i in range(len(self.valency_map) - 1)]
+        l.append(torch.tensor(float('-inf'), dtype=torch.float))
+        return torch.stack(l).repeat(length, 1)
+
+
     def to_rdkit(self, data):
         node_list = []
         for i in range(data.x.size()[0]):
@@ -150,15 +156,15 @@ class TeacherForcer(torch.nn.Module):
 
         # guess ligand labels
         # TODO labels cant be stop node labels, need to mask it out
-        lab_v = self.f(z_v, gumbel=generate)  # gumbel if generative returns one-hots
+        lab_v = self.f(z_v, gumbel=generate, mask=self.calculate_label_mask(z_v.size()[0]))  # gumbel if generative returns one-hots
 
         if not generate:
             log_prob += torch.sum(torch.log(torch.sum(lab_v * x_l[:, 4:], dim=1)))
             lab_v = x_l[:, 4:]
 
         # just for testing
-        if generate:
-            lab_v = x_l[:, 4:]
+        # if generate:
+        #    lab_v = x_l[:, 4:]
 
         # Initialise decoding -------------------------
         # tensor variables

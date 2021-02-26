@@ -27,10 +27,11 @@ class LinearAtomClassifier(torch.nn.Module):
         self.linear = torch.nn.Linear(in_channels, out_channels)
         self.out_channels = out_channels
 
-    def forward(self, x, gumbel=False):
+    def forward(self, x, mask=None, gumbel=False):
         x = self.linear(x)
         x = F.relu(x)
-        # return F.one_hot(torch.argmax(F.softmax(x, dim=1), dim=1), num_classes=self.out_channels)
+        if not mask is None:
+            x = x + mask
         if gumbel:
             x = F.gumbel_softmax(x, hard=True, dim=1)
         else:

@@ -5,8 +5,8 @@ import os
 from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
-
-from data.torchgeom_pdb_loader import parse_bonds
+import numpy as np
+from data.torchgeom_pdb_loader import parse_bonds, LigandDataset
 
 
 def moltosvg(mol, molSize = (300,300), kekulize = True):
@@ -104,4 +104,30 @@ def getBondTypes():
     print("Set of bond types:")
     print(bonds)
 
-getBondTypes()
+def getAngleTypes():
+    d = LigandDataset(root="/Users/padr/repos/linking/datasets")
+    angles = {'0': 0}
+    i = d[0].edge_index[0][0].item()
+    j = d[0].edge_index[1][0].item()
+    A = np.array((d[0].x[i][1].item(), d[0].x[i][2].item(), d[0].x[i][3].item()))
+    B = np.array((d[0].x[j][1].item(), d[0].x[j][2].item(), d[0].x[j][3].item()))
+    base_vec = A - B
+    for data in d:
+        print("Pocessing " + str(data.name))
+        for b in range(data.edge_index.size()[1]):
+            i = data.edge_index[0][b].item()
+            j = data.edge_index[1][b].item()
+            a = np.array((data.x[i][1].item(), data.x[i][2].item(), data.x[i][3].item()))
+            b = np.array((data.x[j][1].item(), data.x[j][2].item(), data.x[j][3].item()))
+            vec = a - b
+            angle = np.arccos(vec.dot(base_vec)/(np.linalg.norm(vec)*np.linalg.norm(base_vec)))
+            angle = (angle/np.pi)*180
+            if str(int(angle)) in angles:
+                angles[str(int(angle))] += 1
+            else:
+                angles[str(int(angle))] = 1
+
+    print("Set of angle types:")
+    print(angles)
+
+getAngleTypes()
