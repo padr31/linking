@@ -11,10 +11,8 @@ from rdkit import Chem
 from torch_geometric import data
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.utils.convert import to_networkx
-import matplotlib.pyplot as plt
 
 
-pdb_dir = "./datasets/raw/refined-set"
 bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
 pd.set_option("display.max_columns", None)
 
@@ -281,7 +279,6 @@ def process_dir(dir, file_ending, graph_constructor, bad_data):
         graphs.append(g)
 
     return graphs
-
 
 class LigandDataset(InMemoryDataset):
     def __init__(self, root, transform=None, pre_transform=None):

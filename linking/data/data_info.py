@@ -6,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
-from data.torchgeom_pdb_loader import parse_bonds, LigandDataset
+from linking.data.torchgeom_pdb_loader import parse_bonds, LigandDataset
 
 
 def moltosvg(mol, molSize = (300,300), kekulize = True):
@@ -39,7 +39,6 @@ def get_components(mol):
 
 #graph = mol_to_complete_graph(mol, explicit_hydrogens=False, node_featurizer=CanonicalAtomFeaturizer, edge_featurizer=CanonicalBondFeaturizer)
 
-from rdkit import RDLogger
 #RDLogger.DisableLog('rdApp.*')
 bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
 files_to_process = []

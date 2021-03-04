@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from torch import nn
-from torch_geometric.nn import VGAE
 
 from linking.config.config import Config
-from linking.layers.gcn_encoders import VariationalGCNEncoder, GCNEncoder
-from linking.model.base import BaseModel
+from linking.layers.gcn_encoders import GCNEncoder
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeClassifier, LinearEdgeSelector, LinearScorePredictor
 from linking.model.model import MoleculeGenerator, SimpleModel
 from linking.model.model_teacher_forcer import TeacherForcer

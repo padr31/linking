@@ -1,9 +1,9 @@
 import torch
 from rdkit import Chem
 from linking.config.config import Config
-from linking.layers.gcn_encoders import GCNEncoder, VariationalGCNEncoder
+from linking.layers.gcn_encoders import GCNEncoder
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeClassifier
-from data.torchgeom_pdb_loader import to_one_hot, allowable_atoms
+from linking.data.torchgeom_pdb_loader import to_one_hot, allowable_atoms
 from rdkit.Chem import rdDepictor, rdmolops, Draw
 from rdkit.Chem.Draw import rdMolDraw2D
 

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict
 
 import torch
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data
 from linking.config.config import Config
-from data.data_plotting import torchgeom_plot
 
 
 class Trainer:
@@ -92,10 +91,10 @@ class Trainer:
 
     def test(self) -> None:
             total_loss = 0
+            self.model.eval()
             for i in range(len(self.X_ligand_test)-1):
                 x_ligand = self.X_ligand_test[i+1]
                 x_pocket = self.X_pocket_test[i+1]
-                self.model.eval()
                 with torch.no_grad():
                     loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms,
                                           out_channels=self.config.ligand_encoder_out_channels)

@@ -1,6 +1,9 @@
 from __future__ import annotations
+
+import os
+
 import torch
-from data.torchgeom_pdb_loader import LigandDataset, PocketDataset
+from linking.data.torchgeom_pdb_loader import LigandDataset, PocketDataset
 from linking.config.config import Config
 
 def train_test_split(dataset, num_train, train_test_ratio, device):
@@ -25,8 +28,8 @@ def train_test_split(dataset, num_train, train_test_ratio, device):
     return X_train, X_test
 
 def create_data(config: Config, device: torch.device):
-    ligand_data = LigandDataset(root=config.dataset_root)
-    pocket_data = PocketDataset(root="/Users/padr/repos/linking/datasets")
+    ligand_data = LigandDataset(root=os.path.join(config.dataset_root, config.dataset))
+    pocket_data = PocketDataset(root=os.path.join(config.dataset_root, config.dataset))
 
     X_ligand_train, X_ligand_test = train_test_split(ligand_data, config.num_train, config.train_test_ratio, device)
     X_pocket_train, X_pocket_test = train_test_split(pocket_data, config.num_train, config.train_test_ratio, device)
