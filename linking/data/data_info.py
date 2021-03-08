@@ -6,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
-from linking.data.torchgeom_pdb_loader import parse_bonds, LigandDataset
+from linking.data.torchgeom_pdb_loader import parse_mol2_bonds, PDBLigandDataset
 
 
 def moltosvg(mol, molSize = (300,300), kekulize = True):
@@ -90,7 +90,7 @@ def getBondTypes():
     bonds = {'1'}
     for path in sorted(files_to_process):
         i += 1
-        b = parse_bonds(path)
+        b = parse_mol2_bonds(path)
         l = list(b.loc[:, "bond_type"].unique())
         [bonds.add(x) for x in l]
 
@@ -104,7 +104,7 @@ def getBondTypes():
     print(bonds)
 
 def getAngleTypes():
-    d = LigandDataset(root="/Users/padr/repos/linking/datasets")
+    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets")
     angles = {'0': 0}
     i = d[0].edge_index[0][0].item()
     j = d[0].edge_index[1][0].item()

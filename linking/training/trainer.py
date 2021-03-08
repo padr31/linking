@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Dict
 
 import torch
+from tqdm import tqdm
+
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data
 from linking.config.config import Config
@@ -20,31 +22,31 @@ class Trainer:
         self.ap_history: Dict[str, float] = {}
 
     def training_epoch(self, epoch) -> float:
+        print('Epoch ' + str(epoch))
         self.model.train()
         total_loss = 0
-        for i in range(len(self.X_ligand_train)):
+        for i in tqdm(range(len(self.X_ligand_train))):
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
             assert x_ligand.name.split('/')[-1].split('_')[0] == x_pocket.name.split('/')[-1].split('_')[0]
-            self.optimizer.zero_grad()
 
             prediction = self.model(x_pocket, x_ligand, generate=False)
             pred_generate = self.model(x_pocket, x_ligand, generate=True)
 
-            if i != 100:
+            if i == 25 or i == 0:
                 ligand = self.model.mol_to_svg(self.model.to_rdkit(
                     Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr)))
                 generated_ligand = self.model.mol_to_svg(self.model.to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2])))
 
-                #if epoch == 1:
-                #    with open("out_svg/ligand_" + str(i) + "_" + str(x_ligand.name.split('/')[-1].split('_')[0]) + ".svg", "w") as svg_file:
-                #        svg_file.write(ligand)
+                if epoch == 1:
+                    with open("out_svg/ligand_" + str(i) + "_" + str(x_ligand.name.split('/')[-1].split('_')[0]) + ".svg", "w") as svg_file:
+                        svg_file.write(ligand)
                 with open("out_svg/generated_ligand_" + str(epoch) + ".svg", "w") as svg_file:
                    svg_file.write(generated_ligand)
 
-                #torchgeom_plot(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index))
-                #torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
+                # torchgeom_plot(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index))
+                # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
 
             loss_f = torch.nn.L1Loss()
 
@@ -66,10 +68,12 @@ class Trainer:
 
             loss = loss_f(pred, truth)
             '''
-
             loss.backward()
+            if (i + 1) % self.config.batch_size == 0:
+                # every config.batch iterations
+                self.optimizer.step()
+                self.optimizer.zero_grad()
 
-            self.optimizer.step()
             total_loss += loss.item()
         return float(total_loss/len(self.X_ligand_train))
 

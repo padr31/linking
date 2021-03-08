@@ -7,15 +7,16 @@ class Config(BaseModel):
     dataset_root: str = "/Users/padr/repos/linking/datasets/"
     dataset_root_pdb: str = "/Users/padr/repos/linking/datasets/pdb/"
     dataset_root_dude: str = "/Users/padr/repos/linking/datasets/dude/"
-    num_epochs: int = 20
-    learning_rate: float = 0.002
+    num_epochs: int = 40
+    learning_rate: float = 0.003
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 10
+    num_train: int = 513
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
+    batch_size: int = 32
     num_allowable_atoms = 11
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4

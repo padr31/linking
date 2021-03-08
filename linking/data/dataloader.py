@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 
 import torch
-from linking.data.torchgeom_pdb_loader import LigandDataset, PocketDataset
+
+from linking.data.torchgeom_dude_loader import DudeLigandDataset, DudePocketDataset
+from linking.data.torchgeom_pdb_loader import PDBLigandDataset, PDBPocketDataset
 from linking.config.config import Config
 
 def train_test_split(dataset, num_train, train_test_ratio, device):
@@ -28,8 +30,14 @@ def train_test_split(dataset, num_train, train_test_ratio, device):
     return X_train, X_test
 
 def create_data(config: Config, device: torch.device):
-    ligand_data = LigandDataset(root=os.path.join(config.dataset_root, config.dataset))
-    pocket_data = PocketDataset(root=os.path.join(config.dataset_root, config.dataset))
+    if config.dataset == 'dude':
+        ligand_data = DudeLigandDataset(root=os.path.join(config.dataset_root, config.dataset))
+        pocket_data = DudePocketDataset(root=os.path.join(config.dataset_root, config.dataset))
+    elif config.dataset == 'pdb':
+        ligand_data = PDBLigandDataset(root=os.path.join(config.dataset_root, config.dataset))
+        pocket_data = PDBPocketDataset(root=os.path.join(config.dataset_root, config.dataset))
+    else:
+        raise Exception('Non-existing dataset identifier provided.')
 
     X_ligand_train, X_ligand_test = train_test_split(ligand_data, config.num_train, config.train_test_ratio, device)
     X_pocket_train, X_pocket_test = train_test_split(pocket_data, config.num_train, config.train_test_ratio, device)
