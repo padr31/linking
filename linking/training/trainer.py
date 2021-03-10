@@ -82,15 +82,6 @@ class Trainer:
             loss = self.training_epoch(epoch=epoch)
             self.loss_history[epoch] = loss
 
-            '''
-            auc, ap = self.test(
-                self.data.test_pos_edge_index, self.data.test_neg_edge_index
-            )
-            self.auc_history[epoch] = auc
-            self.ap_history[epoch] = ap
-
-            print("Epoch: {:03d}, AUC: {:.4f}, AP: {:.4f}, LOSS: {:.4f}".format(epoch, auc, ap, loss))
-            '''
             print("Epoch: {:03d}, LOSS: {:.4f}".format(epoch, loss))
 
     def test(self) -> None:
