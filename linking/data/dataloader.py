@@ -20,6 +20,12 @@ def train_test_split(dataset, num_train, train_test_ratio, device):
         if data.y != None:
             data.y = data.y.to(device)
         data.edge_index = data.edge_index.to(device)
+        if data.edge_attr != None:
+            data.edge_attr = data.edge_attr.to(device)
+        if hasattr(data, 'bfs_index') and data.bfs_index != None:
+            data.bfs_index = [t.to(device) for t in data.bfs_index]
+        if hasattr(data, 'bfs_attr') and data.bfs_attr != None:
+            data.bfs_attr = [t.to(device) for t in data.bfs_attr]
         if i < num_train:
             X_train.append(data)
         elif i < num_train + num_test:

@@ -8,15 +8,15 @@ from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeClass
 from linking.model.model import MoleculeGenerator, SimpleModel
 from linking.model.model_teacher_forcer import TeacherForcer
 
-def build_model(config: Config):
+def build_model(config: Config, device):
     if config.model == "SimpleModel":
-        return build_simple_model(config)
+        return build_simple_model(config, device)
     elif config.model == "MoleculeGenerator":
-        return build_generator_model(config)
+        return build_generator_model(config, device)
     elif config.model == "TeacherForcer":
-        return build_forcer_model(config)
+        return build_forcer_model(config, device)
 
-def build_forcer_model(config: Config) -> nn.Module:
+def build_forcer_model(config: Config, device) -> nn.Module:
     pocket_encoder = GCNEncoder(
         in_channels=config.pocket_encoder_in_channels, out_channels=config.pocket_encoder_out_channels)
     ligand_encoder = GCNEncoder(
@@ -32,7 +32,7 @@ def build_forcer_model(config: Config) -> nn.Module:
     linear_edge_selector = LinearEdgeSelector(edge_feature_size)
     linear_edge_classifier = LinearEdgeClassifier(edge_feature_size)
 
-    model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_classifier, config)
+    model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_classifier, config, device)
     return model
 
 def build_generator_model(config: Config) -> nn.Module:

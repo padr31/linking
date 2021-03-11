@@ -19,8 +19,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # parse json to dict
-    with open(args.config) as json_config:
-        config = json.load(json_config)
+    # with open(args.config) as json_config:
+    #    config = json.load(json_config)
 
     # Create config object
     config = Config()
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     data = create_data(config=config, device=device)
 
     # Create Model
-    model = build_model(config=config)
+    model = build_model(config=config, device=device)
     model = model.to(device)
 
     # Create optimizer

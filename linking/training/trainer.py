@@ -33,7 +33,7 @@ class Trainer:
             prediction = self.model(x_pocket, x_ligand, generate=False)
             pred_generate = self.model(x_pocket, x_ligand, generate=True)
 
-            if i == 25 or i == 0:
+            if i == 0:
                 ligand = self.model.mol_to_svg(self.model.to_rdkit(
                     Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr)))
                 generated_ligand = self.model.mol_to_svg(self.model.to_rdkit(

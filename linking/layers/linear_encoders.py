@@ -55,8 +55,8 @@ class LinearEdgeSelector(torch.nn.Module):
         if gumbel:
             x = F.gumbel_softmax(x, hard=True, dim=0)
             x = x.squeeze(1)
+            x = x.dot(torch.tensor(range(0, x.size()[0])).to(device=x.device).float())
             x = x.long()
-            x = x.dot(torch.tensor(range(0, x.size()[0])).long())
         else:
             x = F.softmax(x, dim=0)
         return x

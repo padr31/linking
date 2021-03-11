@@ -8,7 +8,7 @@ from rdkit.Chem import rdDepictor, rdmolops, Draw
 from rdkit.Chem.Draw import rdMolDraw2D
 
 class TeacherForcer(torch.nn.Module):
-    def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, g_dec: GCNEncoder, f: LinearAtomClassifier, g: LinearEdgeSelector, h: LinearEdgeClassifier, config: Config):
+    def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, g_dec: GCNEncoder, f: LinearAtomClassifier, g: LinearEdgeSelector, h: LinearEdgeClassifier, config: Config, device):
         super(TeacherForcer, self).__init__()
         self.pocket_encoder = pocket_encoder
         self.ligand_encoder = ligand_encoder
@@ -18,14 +18,15 @@ class TeacherForcer(torch.nn.Module):
         self.h = h
         self.decoder = None
         self.config = config
+        self.device = device
         self.valency_map = {'C': 4, 'F': 1, 'N': 3, 'Cl': 1, 'O': 2, 'I': 1, 'P': 5, 'Br': 1, 'S': 6, 'H': 1, 'Stop': 1000}
 
     def to_atom(self, t):
-        return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float)).item())]
+        return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float).to(device=self.device)).item())]
 
     def to_bond(self, t):
         t_s = t.squeeze()
-        return [1, 2, 3][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float)).item())]
+        return [1, 2, 3][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float).to(device=self.device)).item())]
 
     def calculate_node_mask_list(self, valencies, u, closed, edges, unmask=None):
         mask_list = [(
@@ -87,6 +88,7 @@ class TeacherForcer(torch.nn.Module):
         for i in range(0, data.edge_index.size()[1]):
             ix = data.edge_index[0][i].item()
             iy = data.edge_index[1][i].item()
+            # print('data.edge_attr.device: ' + str(data.edge_attr.device))
             bond = self.to_bond(data.edge_attr[i])
             # add bonds between adjacent atoms
             if (str((ix, iy)) in added_bonds) or (str((iy, ix)) in added_bonds) or (iy in invalid_idx or ix in invalid_idx):
@@ -133,17 +135,12 @@ class TeacherForcer(torch.nn.Module):
         svg = drawer.GetDrawingText()
         return svg.replace('svg:', '')
 
-
-    def mol_to_mpl(self, mol, molSize=(300, 300)):
-        fig = Draw.MolToMPL(mol, size=molSize)
-        return fig
-
     def forward(self, data_pocket, data_ligand, generate=False):
         # Initialise data variables -------------------------
         x_p, edge_index_p, edge_wight_p = data_pocket.x, data_pocket.edge_index, data_pocket.edge_attr
         x_l, edge_index_l, edge_weight_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, list(data_ligand.bfs_index), list(data_ligand.bfs_attr)
-        log_prob = torch.tensor(0.0,  dtype=torch.float)
 
+        log_prob = torch.tensor(0.0,  dtype=torch.float).to(device=self.device)
         # Encode -------------------------
         # pocket
         z_pocket_atoms = self.pocket_encoder(x_p, edge_index_p)
@@ -156,7 +153,7 @@ class TeacherForcer(torch.nn.Module):
 
         # guess ligand labels
         # TODO labels cant be stop node labels, need to mask it out
-        lab_v = self.f(z_v, gumbel=generate, mask=self.calculate_label_mask(z_v.size()[0]))  # gumbel if generative returns one-hots
+        lab_v = self.f(z_v, gumbel=generate, mask=self.calculate_label_mask(z_v.size()[0]).to(device=self.device))  # gumbel if generative returns one-hots
 
         if not generate:
             log_prob += torch.sum(torch.log(torch.sum(lab_v * x_l[:, 4:], dim=1)))
@@ -169,14 +166,14 @@ class TeacherForcer(torch.nn.Module):
         # Initialise decoding -------------------------
         # tensor variables
         H_init = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
-        edge_index = torch.tensor([[], []], dtype=torch.long)  # edge indices
-        edge_attr = torch.tensor([], dtype=torch.float)  # edge types
+        edge_index = torch.tensor([[], []], dtype=torch.long).to(device=self.device)  # edge indices
+        edge_attr = torch.tensor([], dtype=torch.float).to(device=self.device)  # edge types
         # append a stop node
-        l_stop = torch.tensor(to_one_hot('Stop', allowable_atoms))
+        l_stop = torch.tensor(to_one_hot('Stop', allowable_atoms)).to(device=self.device)
         lab_v = torch.cat([lab_v, torch.unsqueeze(l_stop, 0)], 0)
-        i_stop = torch.tensor(lab_v.size()[0] - 1)  # index of stop node
+        i_stop = torch.tensor(lab_v.size()[0] - 1).to(device=self.device) # index of stop node
         # init z_graph and x_latent using the first atom with a path to itself
-        edge_index_init = torch.tensor([[0], [0]], dtype=torch.long) if generate else torch.tensor([[bfs_index[0][0]], [bfs_index[0][1]]], dtype=torch.long)
+        edge_index_init = torch.tensor([[0], [0]], dtype=torch.long).to(device=self.device) if generate else torch.tensor([[bfs_index[0][0]], [bfs_index[0][1]]], dtype=torch.long).to(device=self.device)
         z_v = self.g_dec(lab_v, edge_index_init)
         H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
 
@@ -184,8 +181,8 @@ class TeacherForcer(torch.nn.Module):
         valencies = [self.valency_map[self.to_atom(lab_v[i])] for i in range(lab_v.size()[0])]
         edges = []
         closed_nodes = []
-        time = torch.tensor(0)
-        Q = [torch.tensor(0) if generate else bfs_index[0][0]]  # first atom into queue
+        time = torch.tensor(0).to(device=self.device)
+        Q = [torch.tensor(0).to(device=self.device) if generate else bfs_index[0][0]]  # first atom into queue
 
         while len(Q) != 0:
             if not generate:
@@ -197,7 +194,7 @@ class TeacherForcer(torch.nn.Module):
             # edge feature phi = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, G]
             num_nodes = len(z_v)
             phi = torch.cat((
-                torch.tensor([time]).unsqueeze(0).repeat(num_nodes, 1),
+                torch.tensor([time]).unsqueeze(0).repeat(num_nodes, 1).to(device=self.device),
                 z_pocket.unsqueeze(0).repeat(num_nodes, 1),  # pocket agg latent
                 z_v[u].repeat(num_nodes, 1),  # u latent feature
                 lab_v[u].repeat(num_nodes, 1),  # u label
@@ -210,7 +207,7 @@ class TeacherForcer(torch.nn.Module):
             # select node v to add
             # add v of the highest rated edge as rated by a linear layer g(phi) -> softmax
             if generate:
-                v = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[i_stop.item()]), gumbel=generate)
+                v = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[i_stop.item()]).to(device=self.device), gumbel=generate)
             else:
                 v = bfs_index[0][1]
                 v_attr = bfs_attr[0]
@@ -218,7 +215,7 @@ class TeacherForcer(torch.nn.Module):
                 bfs_index.pop(0)
                 bfs_attr.pop(0)
                 # TODO dont mask things during generation
-                p_uv = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item(), i_stop.item()]), gumbel=generate)
+                p_uv = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item(), i_stop.item()]).to(device=self.device), gumbel=generate)
                 # select prob of selecting edge from u to v
                 prob_v = torch.log(torch.squeeze(p_uv[v]))
                 log_prob += prob_v
@@ -234,14 +231,14 @@ class TeacherForcer(torch.nn.Module):
             # l(u,v) -> edge_index
             edge_index = torch.cat([
                 edge_index,
-                torch.tensor([u, v]).unsqueeze(1),
-                torch.tensor([v, u]).unsqueeze(1)
+                torch.tensor([u, v]).unsqueeze(1).to(device=self.device),
+                torch.tensor([v, u]).unsqueeze(1).to(device=self.device)
             ], dim=1)
 
             # add edge type into edge_attr as classified by a layer h(phi) -> {single, double, tripple}
             # need to allow some edge types
             if generate:
-                p_att_uv = self.h(phi, mask=self.calculate_bond_mask(valencies, int(u.item()), closed_nodes, edges), gumbel=generate)[v]
+                p_att_uv = self.h(phi, mask=self.calculate_bond_mask(valencies, int(u.item()), closed_nodes, edges).to(device=self.device), gumbel=generate)[v]
             else:
             # mask was causing issues mask=self.calculate_bond_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item()], unmask_bond=[self.to_bond(v_attr.unsqueeze(0))])
                 p_att_uv = self.h(phi, gumbel=generate)[v]
@@ -265,9 +262,9 @@ class TeacherForcer(torch.nn.Module):
             # compute z_graph = gnn(x_label, edge_index) of the graph
             z_v = self.g_dec(lab_v, edge_index)
             H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
-            time = time + torch.tensor(1)
+            time = time + torch.tensor(1).to(device=self.device)
 
-        return (lab_v, torch.tensor([[], []], dtype=torch.long) if len(edges) == 0 else edge_index, torch.tensor([[]]) if len(edges) == 0 else edge_attr) if generate else log_prob
+        return (lab_v, torch.tensor([[], []], dtype=torch.long).to(device=self.device) if len(edges) == 0 else edge_index, torch.tensor([[]]).to(device=self.device) if len(edges) == 0 else edge_attr) if generate else log_prob
 
     def parameters(self):
        return [
