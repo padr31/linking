@@ -193,7 +193,7 @@ class TeacherForcer(torch.nn.Module):
             # edge feature phi = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, G]
             num_nodes = len(z_v)
             phi = torch.cat((
-                torch.tensor([time]).unsqueeze(0).repeat(num_nodes, 1),
+                torch.tensor([time], device=self.device).unsqueeze(0).repeat(num_nodes, 1),
                 z_pocket.unsqueeze(0).repeat(num_nodes, 1),  # pocket agg latent
                 z_v[u].repeat(num_nodes, 1),  # u latent feature
                 lab_v[u].repeat(num_nodes, 1),  # u label
