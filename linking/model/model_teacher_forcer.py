@@ -137,7 +137,7 @@ class TeacherForcer(torch.nn.Module):
     def forward(self, data_pocket, data_ligand, generate=False):
         # Initialise data variables -------------------------
         x_p, edge_index_p, edge_wight_p = data_pocket.x, data_pocket.edge_index, data_pocket.edge_attr
-        x_l, edge_index_l, edge_weight_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, data_ligand.bfs_index.clone(), list(data_ligand.bfs_attr)
+        x_l, edge_index_l, edge_weight_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, data_ligand.bfs_index.clone(), data_ligand.bfs_attr.clone()
 
         log_prob = torch.tensor(0.0,  dtype=torch.float, device=self.device)
         # Encode -------------------------
@@ -212,7 +212,7 @@ class TeacherForcer(torch.nn.Module):
                 v_attr = bfs_attr[0]
                 # remove front from bfs index as v was selected
                 bfs_index = bfs_index[1:]  # behaves like pop(0)
-                bfs_attr.pop(0)
+                bfs_attr = bfs_attr[1:]
                 # TODO dont mask things during generation
                 p_uv = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item(), i_stop.item()]), gumbel=generate)
                 # select prob of selecting edge from u to v
@@ -221,7 +221,7 @@ class TeacherForcer(torch.nn.Module):
 
             # stop node selected
             # TODO set stop node to last elem not -1
-            if v.item() == i_stop.item() or v.item() == -1:
+            if v == i_stop or v == -1:
                 closed_nodes.append(Q.pop(0))
                 continue
 
