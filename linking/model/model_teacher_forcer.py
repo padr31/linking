@@ -137,7 +137,7 @@ class TeacherForcer(torch.nn.Module):
     def forward(self, data_pocket, data_ligand, generate=False):
         # Initialise data variables -------------------------
         x_p, edge_index_p, edge_wight_p = data_pocket.x, data_pocket.edge_index, data_pocket.edge_attr
-        x_l, edge_index_l, edge_weight_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, list(data_ligand.bfs_index), list(data_ligand.bfs_attr)
+        x_l, edge_index_l, edge_weight_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, data_ligand.bfs_index.clone(), list(data_ligand.bfs_attr)
 
         log_prob = torch.tensor(0.0,  dtype=torch.float, device=self.device)
         # Encode -------------------------
@@ -172,7 +172,7 @@ class TeacherForcer(torch.nn.Module):
         lab_v = torch.cat([lab_v, torch.unsqueeze(l_stop, 0)], 0)
         i_stop = torch.tensor(lab_v.size()[0] - 1, device=self.device) # index of stop node
         # init z_graph and x_latent using the first atom with a path to itself
-        edge_index_init = torch.tensor([[0], [0]], dtype=torch.long, device=self.device) if generate else torch.tensor([[bfs_index[0][0]], [bfs_index[0][1]]], dtype=torch.long, device=self.device)
+        edge_index_init = torch.tensor([[0], [0]], dtype=torch.long, device=self.device) if generate else torch.stack([bfs_index[0][0].unsqueeze(0), bfs_index[0][1].unsqueeze(0)])
         z_v = self.g_dec(lab_v, edge_index_init)
         H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
 
@@ -185,7 +185,7 @@ class TeacherForcer(torch.nn.Module):
 
         while len(Q) != 0:
             if not generate:
-                if len(bfs_index) == 0:
+                if bfs_index.shape[0] == 0:
                     break
             u = Q[0]
 
@@ -211,7 +211,7 @@ class TeacherForcer(torch.nn.Module):
                 v = bfs_index[0][1]
                 v_attr = bfs_attr[0]
                 # remove front from bfs index as v was selected
-                bfs_index.pop(0)
+                bfs_index = bfs_index[1:]  # behaves like pop(0)
                 bfs_attr.pop(0)
                 # TODO dont mask things during generation
                 p_uv = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item(), i_stop.item()]), gumbel=generate)
