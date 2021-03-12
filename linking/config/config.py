@@ -7,16 +7,17 @@ class Config(BaseModel):
     dataset_root: str = "./datasets/"
     dataset_root_pdb: str = "./datasets/pdb/"
     dataset_root_dude: str = "./datasets/dude/"
-    num_epochs: int = 40
+    save_model: str = "./out_model/"
+    num_epochs: int = 30
     learning_rate: float = 0.003
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 512
+    num_train: int = 30
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    batch_size: int = 64
+    batch_size: int = 10
     num_allowable_atoms = 11
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4

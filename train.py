@@ -1,10 +1,10 @@
 import argparse
-import json
 import torch
 from linking.config.config import Config
 from linking.data.dataloader import create_data
 from linking.model.build_model import build_model
 from linking.training.trainer import Trainer
+import os
 
 if __name__ == "__main__":
     # Parse command line args
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     config = Config()
     # config = Config(**config) # Use this if passing a config json instead of defaults
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = 'cpu' # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create data
     data = create_data(config=config, device=device)
@@ -44,3 +44,8 @@ if __name__ == "__main__":
     # Train
     trainer.train()
     trainer.test()
+
+    if not os.path.exists(config.save_model):
+        os.makedirs(config.save_model)
+
+    torch.save(model, config.save_model + 'model')
