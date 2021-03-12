@@ -26,7 +26,7 @@ if __name__ == "__main__":
     config = Config()
     # config = Config(**config) # Use this if passing a config json instead of defaults
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create data
     data = create_data(config=config, device=device)

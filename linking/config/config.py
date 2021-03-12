@@ -13,11 +13,11 @@ class Config(BaseModel):
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 30
+    num_train: int = 1024
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    batch_size: int = 10
+    batch_size: int = 16
     num_allowable_atoms = 11
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4

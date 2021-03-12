@@ -30,10 +30,10 @@ class TeacherForcer(torch.nn.Module):
 
     def calculate_node_mask_list(self, valencies, u, closed, edges, unmask=None):
         mask_list = [(
-                 (float('-inf') if i == u else 0.0) + # no self edges allowed
-                 (float('-inf') if valencies[i] <= 0 else 0.0) + # valency of new node kept
-                 (float('-inf') if valencies[u] <= 0 else 0.0) + # valency of old node kept
-                 (float('-inf') if i in closed else 0.0) + # new node is not closed
+                 (float('-inf') if i == u else 0.0) +  # no self edges allowed
+                 (float('-inf') if valencies[i] <= 0 else 0.0) +  # valency of new node kept
+                 (float('-inf') if valencies[u] <= 0 else 0.0) +  # valency of old node kept
+                 (float('-inf') if i in closed else 0.0) +  # new node is not closed
                  (float('-inf') if (u, i) in edges else 0.0))
                  for i in range(len(valencies))]
         if not unmask is None:
