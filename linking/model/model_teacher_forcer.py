@@ -170,11 +170,12 @@ class TeacherForcer(torch.nn.Module):
         # append a stop node
         l_stop = torch.tensor(to_one_hot('Stop', allowable_atoms), device=self.device)
         lab_v = torch.cat([lab_v, torch.unsqueeze(l_stop, 0)], 0)
-        i_stop = torch.tensor(lab_v.size()[0] - 1, device=self.device) # index of stop node
+        i_stop = torch.tensor(lab_v.size()[0] - 1, device=self.device)  # index of stop node
         # init z_graph and x_latent using the first atom with a path to itself
         edge_index_init = torch.tensor([[0], [0]], dtype=torch.long, device=self.device) if generate else torch.stack([bfs_index[0][0].unsqueeze(0), bfs_index[0][1].unsqueeze(0)])
         z_v = self.g_dec(lab_v, edge_index_init)
         H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
+        adj = torch.zeros(lab_v.shape[0], lab_v.shape[0], device=self.device)
 
         # non-tensor helper variables
         valencies = [self.valency_map[self.to_atom(lab_v[i])] for i in range(lab_v.size()[0])]
@@ -233,6 +234,8 @@ class TeacherForcer(torch.nn.Module):
                 torch.tensor([u, v], device=self.device).unsqueeze(1),
                 torch.tensor([v, u], device=self.device).unsqueeze(1)
             ], dim=1)
+            adj[u, v] = 1
+            adj[v, u] = 1
 
             # add edge type into edge_attr as classified by a layer h(phi) -> {single, double, tripple}
             # need to allow some edge types
@@ -262,7 +265,7 @@ class TeacherForcer(torch.nn.Module):
             z_v = self.g_dec(lab_v, edge_index)
             H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
             time = time + torch.tensor(1, device=self.device)
-
+        assert sum(adj.matmul(torch.ones(adj.shape[0]))) == edge_index.shape[1]
         return (lab_v, torch.tensor([[], []], dtype=torch.long, device=self.device) if len(edges) == 0 else edge_index, torch.tensor([[]], device=self.device) if len(edges) == 0 else edge_attr) if generate else log_prob
 
     def parameters(self):
