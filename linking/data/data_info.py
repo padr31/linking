@@ -6,8 +6,9 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
-from linking.data.torchgeom_pdb_loader import parse_mol2_bonds, PDBLigandDataset
-
+from linking.data.data_util import parse_mol2_bonds
+from linking.data.torchgeom_pdb_loader import PDBLigandDataset
+import matplotlib.pyplot as plt
 
 def moltosvg(mol, molSize = (300,300), kekulize = True):
     mc = Chem.Mol(mol.ToBinary())
@@ -103,30 +104,85 @@ def getBondTypes():
     print("Set of bond types:")
     print(bonds)
 
+import math
+
 def getAngleTypes():
-    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets")
+    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
+
+    def vec_angle(vec1, vec2):
+        angle = np.arccos(vec1.dot(vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+        return angle
+
+    Q = []    # returns true if new things were added, i.e. we have new angles to calculate
+    def qpush(edge):
+        if (edge[0] == -1 or edge[1] == -1): # stop edge
+            return False
+        else:  # new edge
+            Q.append(edge)
+            if len(Q) == 4:
+                Q.pop(0)
+            assert len(Q) <= 3
+            return True
+
     angles = {'0': 0}
-    i = d[0].edge_index[0][0].item()
-    j = d[0].edge_index[1][0].item()
-    A = np.array((d[0].x[i][1].item(), d[0].x[i][2].item(), d[0].x[i][3].item()))
-    B = np.array((d[0].x[j][1].item(), d[0].x[j][2].item(), d[0].x[j][3].item()))
-    base_vec = A - B
+    dyhedrals = {'0': 0}
+    nan_count = 0
+
+
+
     for data in d:
+        def edge_vec(edge):
+            return data.x[edge[1]][1:4].numpy() - data.x[edge[0]][1:4].numpy()
+
         print("Pocessing " + str(data.name))
-        for b in range(data.edge_index.size()[1]):
-            i = data.edge_index[0][b].item()
-            j = data.edge_index[1][b].item()
-            a = np.array((data.x[i][1].item(), data.x[i][2].item(), data.x[i][3].item()))
-            b = np.array((data.x[j][1].item(), data.x[j][2].item(), data.x[j][3].item()))
-            vec = a - b
-            angle = np.arccos(vec.dot(base_vec)/(np.linalg.norm(vec)*np.linalg.norm(base_vec)))
-            angle = (angle/np.pi)*180
-            if str(int(angle)) in angles:
-                angles[str(int(angle))] += 1
-            else:
-                angles[str(int(angle))] = 1
+        Q = []
+        for i in range(0, len(data.bfs_index)):
+            have_new_node = qpush(data.bfs_index[i])
+            queue_length = len(Q)
+            vec = np.zeros(2)
+            base_vec = np.zeros(2)
+            plane_base_vec = np.zeros(2)
+            if have_new_node and queue_length >= 2:  # new angle available
+                vec = edge_vec(Q[queue_length-1])
+                base_vec = edge_vec(Q[queue_length-2])
+                angle = vec_angle(vec, base_vec)
+                angle = (angle / np.pi) * 180
+                if math.isnan(angle):
+                    nan_count += 1
+                    continue
+                if str(int(angle)) in angles:
+                    angles[str(int(angle))] += 1
+                else:
+                    angles[str(int(angle))] = 1
+            if have_new_node and queue_length >= 3:  # new dyhedral available
+                dehydral_base_vec = edge_vec(Q[queue_length-3])
+                plane, base_plane = (np.cross(vec, base_vec), np.cross(base_vec, dehydral_base_vec))
+                # plane = plane / np.linalg.norm(plane)
+                # base_plane = base_plane / np.linalg.norm(base_plane)
+                dyhedral = vec_angle(plane, base_plane)
+                dyhedral = (dyhedral / np.pi) * 180
+                if math.isnan(dyhedral):
+                    nan_count += 1
+                    continue
+                if str(int(dyhedral)) in dyhedrals:
+                    dyhedrals[str(int(dyhedral))] += 1
+                else:
+                    dyhedrals[str(int(dyhedral))] = 1
+
+    for dic in [angles, dyhedrals]:
+        dic = {k: v for k, v in dic.items() if v > 2000}
+        sorted_tupples = sorted([(k, v) for k, v in dic.items()], key=lambda e: e[1])
+        x = [e[0] for e in sorted_tupples]
+        y = [e[1] for e in sorted_tupples]
+        plt.bar(x, y, color='g', width=1)
+        plt.xticks(rotation=-90)
+        plt.show()
 
     print("Set of angle types:")
     print(angles)
+    print("Set of dyhedral angle types:")
+    print(dyhedrals)
+    print('Nan count:')
+    print(nan_count)
 
 getAngleTypes()

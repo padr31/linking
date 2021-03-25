@@ -3,12 +3,15 @@ from __future__ import annotations
 from typing import Dict
 
 import torch
+from rdkit import Chem
 from tqdm import tqdm
 
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data
 from linking.config.config import Config
-
+from linking.data.data_eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 class Trainer:
     def __init__(self, model: torch.nn.Module, data, optimizer, config: Config):
@@ -20,6 +23,11 @@ class Trainer:
         self.loss_history: Dict[str, float] = {}
         self.auc_history: Dict[str, float] = {}
         self.ap_history: Dict[str, float] = {}
+        logdir = config.logdir + datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.general_writer = SummaryWriter(logdir + "/general")
+        self.writers = {}
+        for a in range(len(config.eval_data)):
+            self.writers[str(a)] = SummaryWriter(logdir + "/" + str(a))
 
     def training_epoch(self, epoch) -> float:
         print('Epoch ' + str(epoch))
@@ -31,25 +39,7 @@ class Trainer:
             assert x_ligand.name.split('/')[-1].split('_')[0] == x_pocket.name.split('/')[-1].split('_')[0]
 
             prediction = self.model(x_pocket, x_ligand, generate=False)
-            pred_generate = self.model(x_pocket, x_ligand, generate=True)
-
-            if i == 0:
-                ligand = self.model.mol_to_svg(self.model.to_rdkit(
-                    Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr)))
-                generated_ligand = self.model.mol_to_svg(self.model.to_rdkit(
-                    Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2])))
-
-                if epoch == 1:
-                    with open("out_svg/ligand_" + str(i) + "_" + str(x_ligand.name.split('/')[-1].split('_')[0]) + ".svg", "w") as svg_file:
-                        svg_file.write(ligand)
-                with open("out_svg/generated_ligand_" + str(epoch) + ".svg", "w") as svg_file:
-                   svg_file.write(generated_ligand)
-
-                # torchgeom_plot(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index))
-                # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
-
             loss_f = torch.nn.L1Loss()
-
             loss = loss_f(-prediction, torch.tensor(0.0))
             ''' loss for gumbel
             loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms, out_channels=self.config.ligand_encoder_out_channels)
@@ -83,6 +73,50 @@ class Trainer:
             self.loss_history[epoch] = loss
 
             print("Epoch: {:03d}, LOSS: {:.4f}".format(epoch, loss))
+            self.general_writer.add_scalar('Training', loss, epoch)
+            self.eval(epoch=epoch)
+
+    def eval(self, epoch):
+        self.model.eval()
+        eval_data = [0, 1, 2]
+
+        for i in eval_data:
+            x_ligand = self.X_ligand_train[i]
+            x_pocket = self.X_pocket_train[i]
+            protein_name = str(x_ligand.name.split('/')[-1].split('_')[0])
+
+            tanimoto = 0
+            nhoh_count = 0
+            ring_count = 0
+
+            ligand_mol = self.model.to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr))
+            ligand_fingerprint = rdkit_fingerprint(ligand_mol)
+            ligand_svg = self.model.mol_to_svg(ligand_mol)
+            with open("out_svg/ligand_" + "_" + protein_name + ".svg", "w") as svg_file:
+                svg_file.write(ligand_svg)
+
+            for j in range(self.config.num_eval_generate):
+                pred_generate = self.model(x_pocket, x_ligand, generate=True)
+
+                generated_ligand_mol = self.model.to_rdkit(
+                    Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2]))
+
+                generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
+                generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
+                tanimoto += generated_ligand_tanimoto / self.config.num_eval_generate
+                # nhoh_count += lipinski_nhoh_count(generated_ligand_mol) / self.config.num_eval_generate
+                # ring_count += lipinski_ring_count(generated_ligand_mol) / self.config.num_eval_generate
+                generated_ligand_svg = self.model.mol_to_svg(generated_ligand_mol)
+                with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
+                    svg_file.write(generated_ligand_svg)
+
+                # torchgeom_plot(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index))
+                # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
+
+            self.writers[str(i)].add_scalar('Tanimoto', tanimoto, epoch)
+            self.writers[str(i)].add_scalar('NHOH Count', nhoh_count, epoch)
+            self.writers[str(i)].add_scalar('Ring Count', ring_count, epoch)
+            print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
 
     def test(self) -> None:
             total_loss = 0
@@ -98,7 +132,6 @@ class Trainer:
 
                     #torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
                     loss_f = torch.nn.L1Loss()
-
                     '''
                     gumbel loss
                     indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)
