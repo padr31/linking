@@ -104,8 +104,8 @@ class Trainer:
                 generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
                 generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
                 tanimoto += generated_ligand_tanimoto / self.config.num_eval_generate
-                nhoh_count += lipinski_nhoh_count(generated_ligand_mol) / self.config.num_eval_generate
-                ring_count += lipinski_ring_count(generated_ligand_mol) / self.config.num_eval_generate
+                # nhoh_count += lipinski_nhoh_count(generated_ligand_mol) / self.config.num_eval_generate
+                # ring_count += lipinski_ring_count(generated_ligand_mol) / self.config.num_eval_generate
                 generated_ligand_svg = self.model.mol_to_svg(generated_ligand_mol)
                 with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
                     svg_file.write(generated_ligand_svg)

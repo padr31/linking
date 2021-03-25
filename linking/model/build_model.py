@@ -34,7 +34,7 @@ def build_forcer_model(config: Config, device) -> nn.Module:
     linear_edge_classifier = LinearEdgeClassifier(edge_feature_size)
     linear_edge_row_classifier = LinearEdgeRowClassifier(edge_feature_size)
 
-    model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_classifier, linear_edge_row_classifier, config, device)
+    model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_row_classifier, config, device)
     return model
 
 def build_generator_model(config: Config) -> nn.Module:
