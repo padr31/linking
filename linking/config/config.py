@@ -9,18 +9,18 @@ class Config(BaseModel):
     dataset_root_dude: str = "./datasets/dude/"
     save_model: str = "./out_model/"
     logdir: str = "./out_logdir/"
-    num_epochs: int = 30
+    num_epochs: int = 15
     learning_rate: float = 0.003
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 64
+    num_train: int = 128
     eval_data: list = [0, 1, 2]
     num_eval_generate: int = 20
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    batch_size: int = 16
+    batch_size: int = 32
     num_allowable_atoms = 11
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4

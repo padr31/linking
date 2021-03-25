@@ -2,13 +2,13 @@ import torch
 from rdkit import Chem
 from linking.config.config import Config
 from linking.layers.gcn_encoders import GCNEncoder
-from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeClassifier
+from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeRowClassifier, LinearEdgeClassifier
 from linking.data.data_util import to_one_hot, allowable_atoms
 from rdkit.Chem import rdDepictor, rdmolops, Draw
 from rdkit.Chem.Draw import rdMolDraw2D
 
 class TeacherForcer(torch.nn.Module):
-    def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, g_dec: GCNEncoder, f: LinearAtomClassifier, g: LinearEdgeSelector, h: LinearEdgeClassifier, config: Config, device):
+    def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, g_dec: GCNEncoder, f: LinearAtomClassifier, g: LinearEdgeSelector, h: LinearEdgeClassifier, h_row: LinearEdgeRowClassifier, config: Config, device):
         super(TeacherForcer, self).__init__()
         self.pocket_encoder = pocket_encoder
         self.ligand_encoder = ligand_encoder
@@ -16,6 +16,7 @@ class TeacherForcer(torch.nn.Module):
         self.f = f
         self.g = g
         self.h = h
+        self.h_row = h_row
         self.decoder = None
         self.config = config
         self.device = device
@@ -28,29 +29,60 @@ class TeacherForcer(torch.nn.Module):
         t_s = t.squeeze()
         return [1, 2, 3][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=self.device)).item())]
 
-    def calculate_node_mask_list(self, valencies, u, closed, edges, unmask=None):
+    def calculate_node_mask_list(self, valencies, u, closed, closed_mask, edges, adj, unmask=None):
+        #  mask for node u --> v
+        if valencies[u] < 1:
+            m_list = torch.ones_like(valencies, device=self.device, dtype=torch.float)*float('-inf')  #  valency of u full
+        else:
+            m_list = torch.zeros_like(valencies, device=self.device, dtype=torch.float)
+            m_list[valencies < 1] = float('-inf')  # valency of v is full
+            m_list[u] = float('-inf')  # no self edges allowed
+            m_list[closed_mask] = float('-inf')
+            #  we don't deal with closed nodes, because if they can bear an edge we don't mind
+            m_list[adj[u]] = float('-inf')  # edge already present
+        if not unmask is None:
+            m_list[unmask] = 0.0
+
         mask_list = [(
                  (float('-inf') if i == u else 0.0) +  # no self edges allowed
                  (float('-inf') if valencies[i] <= 0 else 0.0) +  # valency of new node kept
                  (float('-inf') if valencies[u] <= 0 else 0.0) +  # valency of old node kept
                  (float('-inf') if i in closed else 0.0) +  # new node is not closed
-                 (float('-inf') if (u, i) in edges else 0.0))
-                 for i in range(len(valencies))]
+                 (float('-inf') if (u, i) in edges else 0.0))  # edge already present
+                 for i in range(valencies.size()[0])]
         if not unmask is None:
             for i in unmask:
                 mask_list[i] = 0
-        return mask_list
 
-    def calculate_node_mask(self, valencies, u, closed, edges, unmask=None):
-        mask_list = self.calculate_node_mask_list(valencies, u, closed, edges, unmask)
-        t = torch.stack([torch.tensor(0., dtype=torch.float, device=self.device) if x == 0.0 else torch.tensor(float('-inf'), dtype=torch.float, device=self.device) for x in mask_list])
-        return torch.unsqueeze(t, 1)
+        for i in range(len(mask_list)):
+            assert mask_list[i] == m_list[i]
+        return m_list
 
-    def calculate_bond_mask(self, valencies, u, closed, edges, unmask=None, unmask_bond=None):
-        node_mask = self.calculate_node_mask_list(valencies, u, closed, edges, unmask)
+    def calculate_node_mask(self, valencies, u, closed, closed_mask, edges, adj, unmask=None):
+        m_list = self.calculate_node_mask_list(valencies, u, closed, closed_mask, edges, adj, unmask)
+        # t = torch.stack([torch.tensor(0., dtype=torch.float, device=self.device) if x == 0.0 else torch.tensor(float('-inf'), dtype=torch.float, device=self.device) for x in mask_list])
+        return torch.unsqueeze(m_list, 1)
+
+    def calculate_bond_mask(self, valencies, u, closed, closed_mask, edges, adj, unmask=None, unmask_bond=None):
+        m_list = self.calculate_node_mask_list(valencies, u, closed, closed_mask, edges, adj, unmask)
+
+        zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
+        one_row = torch.tensor([0., float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
+        two_row = torch.tensor([0., 0., float('-inf')], device=self.device, dtype=torch.float)
+        three_row = torch.tensor([0., 0., 0.], device=self.device, dtype=torch.float)
+        e_mask = torch.zeros(valencies.size(0), 3)
+        e_mask[valencies <= 2] = two_row
+        e_mask[valencies <= 1] = one_row
+        e_mask[valencies <= 0] = zero_row
+        e_mask[m_list == float('-inf')] = zero_row
+        if not (unmask is None or unmask_bond is None):
+            for i in unmask:
+                for j in unmask_bond:
+                    e_mask[i, j-1] = 0.
+
         mask_list = [
             torch.stack([(
-            node_mask[i] +
+            m_list[i] +
             (torch.tensor(float('-inf'), dtype=torch.float, device=self.device) if valencies[i] < b else torch.tensor(0.0, dtype=torch.float, device=self.device)))
             for b in (1, 2, 3)])
             for i in range(len(valencies))]
@@ -58,12 +90,45 @@ class TeacherForcer(torch.nn.Module):
             for i in unmask:
                 for j in unmask_bond:
                     mask_list[i][j-1] = 0
-        return torch.stack(mask_list)
+
+        for i in range(len(mask_list)):
+            for j in range(3):
+                assert mask_list[i][j] == e_mask[i, j]
+
+        return e_mask
+
+    def calculate_bond_mask_row(self, valencies, u, v, closed, closed_mask, edges, adj, unmask=None, unmask_bond=None):
+        m_list = self.calculate_node_mask_list(valencies, u, closed, closed_mask, edges, adj, unmask)
+
+        zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
+        one_row = torch.tensor([0., float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
+        two_row = torch.tensor([0., 0., float('-inf')], device=self.device, dtype=torch.float)
+        e_mask = torch.zeros(3)
+        if min(valencies[u], valencies[v]) <= 2:
+            e_mask = two_row
+        if min(valencies[u], valencies[v]) <= 1:
+            e_mask = one_row
+        if min(valencies[u], valencies[v]) <= 0:
+            e_mask = zero_row
+        # TODO should not be true (although we sometimes need to force wrong valencies) assert m_list[v] != float('-inf')
+        if m_list[v] == float('-inf'):
+            e_mask = zero_row
+
+        if not (unmask_bond is None):
+            for j in unmask_bond:
+                e_mask[j - 1] = 0.
+        return e_mask.unsqueeze(0)
 
     def calculate_label_mask(self, length):
+        l_mask = torch.zeros(len(self.valency_map), dtype=torch.float, device=self.device)
+        l_mask[-1] = float('-inf')
         l = [torch.tensor(0.0, dtype=torch.float, device=self.device) for i in range(len(self.valency_map) - 1)]
         l.append(torch.tensor(float('-inf'), dtype=torch.float, device=self.device))
-        return torch.stack(l).repeat(length, 1)
+
+        for i in range(len(l)):
+            assert l[i] == l_mask[i]
+
+        return l_mask.repeat(length, 1)
 
 
     def to_rdkit(self, data):
@@ -175,13 +240,16 @@ class TeacherForcer(torch.nn.Module):
         edge_index_init = torch.tensor([[0], [0]], dtype=torch.long, device=self.device) if generate else torch.stack([bfs_index[0][0].unsqueeze(0), bfs_index[0][1].unsqueeze(0)])
         z_v = self.g_dec(lab_v, edge_index_init)
         H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
-        adj = torch.zeros(lab_v.shape[0], lab_v.shape[0], device=self.device)
+        adj = torch.zeros(lab_v.shape[0], lab_v.shape[0], device=self.device, dtype=torch.bool)
 
-        # non-tensor helper variables
-        valencies = [self.valency_map[self.to_atom(lab_v[i])] for i in range(lab_v.size()[0])]
+        # helper variables
+        valencies = torch.tensor([self.valency_map[self.to_atom(lab_v[i])] for i in range(lab_v.size()[0])], device=self.device)
         edges = []
         closed_nodes = []
+        closed_mask = torch.zeros_like(valencies, device=self.device, dtype=torch.bool)
         time = torch.tensor(0, device=self.device)
+
+        # non-tensor Queue, convert to queue
         Q = [torch.tensor(0, device=self.device) if generate else bfs_index[0][0]]  # first atom into queue
 
         while len(Q) != 0:
@@ -207,7 +275,7 @@ class TeacherForcer(torch.nn.Module):
             # select node v to add
             # add v of the highest rated edge as rated by a linear layer g(phi) -> softmax
             if generate:
-                v = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[i_stop.item()]), gumbel=generate)
+                v = self.g(phi, self.calculate_node_mask(valencies, u, closed_nodes, closed_mask, edges, adj, unmask=torch.tensor([i_stop])), gumbel=generate)
             else:
                 v = bfs_index[0][1]
                 v_attr = bfs_attr[0]
@@ -215,7 +283,7 @@ class TeacherForcer(torch.nn.Module):
                 bfs_index = bfs_index[1:]  # behaves like pop(0)
                 bfs_attr = bfs_attr[1:]
                 # TODO dont mask things during generation
-                p_uv = self.g(phi, self.calculate_node_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item(), i_stop.item()]), gumbel=generate)
+                p_uv = self.g(phi, self.calculate_node_mask(valencies, u, closed_nodes, closed_mask, edges, adj, unmask=torch.tensor([v, i_stop])), gumbel=generate)
                 # select prob of selecting edge from u to v
                 prob_v = torch.log(torch.squeeze(p_uv[v]))
                 log_prob += prob_v
@@ -223,7 +291,9 @@ class TeacherForcer(torch.nn.Module):
             # stop node selected
             # TODO set stop node to last elem not -1
             if v == i_stop or v == -1:
-                closed_nodes.append(Q.pop(0))
+                popped = Q.pop(0)
+                closed_nodes.append(popped)
+                closed_mask[popped] = True
                 continue
 
             # add index of v to Q
@@ -234,16 +304,15 @@ class TeacherForcer(torch.nn.Module):
                 torch.tensor([u, v], device=self.device).unsqueeze(1),
                 torch.tensor([v, u], device=self.device).unsqueeze(1)
             ], dim=1)
-            adj[u, v] = 1
-            adj[v, u] = 1
 
             # add edge type into edge_attr as classified by a layer h(phi) -> {single, double, tripple}
             # need to allow some edge types
             if generate:
-                p_att_uv = self.h(phi, mask=self.calculate_bond_mask(valencies, int(u.item()), closed_nodes, edges), gumbel=generate)[v]
+                p_att_uv = self.h_row(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_nodes, closed_mask, edges, adj), gumbel=generate)
             else:
-            # mask was causing issues mask=self.calculate_bond_mask(valencies, int(u.item()), closed_nodes, edges, unmask=[v.item()], unmask_bond=[self.to_bond(v_attr.unsqueeze(0))])
-                p_att_uv = self.h(phi, gumbel=generate)[v]
+                # only mask
+                p_att_uv = self.h_row(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_nodes, closed_mask, edges, adj, unmask_bond=torch.tensor([self.to_bond(v_attr.unsqueeze(0))]))
+                                  , gumbel=generate)
             edge_type = p_att_uv
             if not generate:
                 prob = torch.log(torch.sum(p_att_uv*v_attr))
@@ -258,6 +327,8 @@ class TeacherForcer(torch.nn.Module):
             valencies[int(v.item())] -= bond_valency
 
             # update edges
+            adj[u, v] = True
+            adj[v, u] = True
             edges.append((int(u.item()), int(v.item())))
             edges.append((int(v.item()), int(u.item())))
 
@@ -265,7 +336,10 @@ class TeacherForcer(torch.nn.Module):
             z_v = self.g_dec(lab_v, edge_index)
             H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
             time = time + torch.tensor(1, device=self.device)
-        assert sum(adj.matmul(torch.ones(adj.shape[0]))) == edge_index.shape[1]
+            for (e_i, e_j) in edges:
+                assert adj[e_i, e_j]
+
+        assert sum(adj.type(torch.FloatTensor).matmul(torch.ones(adj.shape[0]))) == edge_index.shape[1]
         return (lab_v, torch.tensor([[], []], dtype=torch.long, device=self.device) if len(edges) == 0 else edge_index, torch.tensor([[]], device=self.device) if len(edges) == 0 else edge_attr) if generate else log_prob
 
     def parameters(self):
@@ -278,5 +352,6 @@ class TeacherForcer(torch.nn.Module):
             dict(params=self.g_dec.conv2.parameters(), weight_decay=0),
             dict(params=self.f.linear.parameters()),
             dict(params=self.g.linear.parameters()),
-            dict(params=self.h.linear.parameters())
-        ]
+            dict(params=self.h.linear.parameters()),
+            dict(params=self.h_row.linear.parameters()),
+       ]

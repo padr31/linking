@@ -4,7 +4,8 @@ from torch import nn
 
 from linking.config.config import Config
 from linking.layers.gcn_encoders import GCNEncoder
-from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeClassifier, LinearEdgeSelector, LinearScorePredictor
+from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeClassifier, LinearEdgeSelector, \
+    LinearScorePredictor, LinearEdgeRowClassifier
 from linking.model.model import MoleculeGenerator, SimpleModel
 from linking.model.model_teacher_forcer import TeacherForcer
 
@@ -31,8 +32,9 @@ def build_forcer_model(config: Config, device) -> nn.Module:
     edge_feature_size = 1 + config.pocket_encoder_out_channels + 2*(config.graph_encoder_out_channels + config.num_allowable_atoms) + (config.ligand_encoder_out_channels + config.num_allowable_atoms) + (config.graph_encoder_out_channels + config.num_allowable_atoms)
     linear_edge_selector = LinearEdgeSelector(edge_feature_size)
     linear_edge_classifier = LinearEdgeClassifier(edge_feature_size)
+    linear_edge_row_classifier = LinearEdgeRowClassifier(edge_feature_size)
 
-    model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_classifier, config, device)
+    model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_classifier, linear_edge_row_classifier, config, device)
     return model
 
 def build_generator_model(config: Config) -> nn.Module:
