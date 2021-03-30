@@ -1,11 +1,8 @@
 import torch
-from rdkit import Chem
 from linking.config.config import Config
 from linking.layers.gcn_encoders import GCNEncoder
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeRowClassifier, LinearEdgeClassifier
-from linking.data.data_util import to_one_hot, allowable_atoms
-from rdkit.Chem import rdDepictor, rdmolops, Draw
-from rdkit.Chem.Draw import rdMolDraw2D
+from linking.data.data_util import to_one_hot, allowable_atoms, to_bond_valency, to_bond_index, to_atom
 
 class TeacherForcer(torch.nn.Module):
     def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, g_dec: GCNEncoder, f: LinearAtomClassifier, g: LinearEdgeSelector, h: LinearEdgeRowClassifier, config: Config, device):
@@ -20,13 +17,6 @@ class TeacherForcer(torch.nn.Module):
         self.config = config
         self.device = device
         self.valency_map = {'C': 4, 'F': 1, 'N': 3, 'Cl': 1, 'O': 2, 'I': 1, 'P': 5, 'Br': 1, 'S': 6, 'H': 1, 'Stop': 1000}
-
-    def to_atom(self, t):
-        return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=self.device)).item())]
-
-    def to_bond(self, t):
-        t_s = t.squeeze()
-        return [1, 2, 3][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=self.device)).item())]
 
     def calculate_node_mask_list(self, valencies, u, closed_mask, adj, unmask=None):
         #  mask for node u --> v
@@ -51,10 +41,10 @@ class TeacherForcer(torch.nn.Module):
     def calculate_bond_mask(self, valencies, u, closed_mask, adj, unmask=None, unmask_bond=None):
         m_list = self.calculate_node_mask_list(valencies, u, closed_mask, adj, unmask)
 
-        zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
-        one_row = torch.tensor([0., float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
-        two_row = torch.tensor([0., 0., float('-inf')], device=self.device, dtype=torch.float)
-        e_mask = torch.zeros(valencies.size(0), 3)
+        zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
+        one_row = torch.tensor([0., float('-inf'), float('-inf'), 0.0], device=self.device, dtype=torch.float)
+        two_row = torch.tensor([0., 0., float('-inf'), 0.0], device=self.device, dtype=torch.float)
+        e_mask = torch.zeros(valencies.size(0), self.config.num_allowable_bonds)
         e_mask[valencies <= 2] = two_row
         e_mask[valencies <= 1] = one_row
         e_mask[valencies <= 0] = zero_row
@@ -69,10 +59,10 @@ class TeacherForcer(torch.nn.Module):
     def calculate_bond_mask_row(self, valencies, u, v, closed_mask, adj, unmask=None, unmask_bond=None):
         m_list = self.calculate_node_mask_list(valencies, u, closed_mask, adj, unmask)
 
-        zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
-        one_row = torch.tensor([0., float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
-        two_row = torch.tensor([0., 0., float('-inf')], device=self.device, dtype=torch.float)
-        e_mask = torch.zeros(3)
+        zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
+        one_row = torch.tensor([0., float('-inf'), float('-inf'), 0.0], device=self.device, dtype=torch.float)
+        two_row = torch.tensor([0., 0., float('-inf'), 0.0], device=self.device, dtype=torch.float)
+        e_mask = torch.zeros(self.config.num_allowable_bonds)
         if min(valencies[u], valencies[v]) <= 2:
             e_mask = two_row
         if min(valencies[u], valencies[v]) <= 1:
@@ -92,75 +82,6 @@ class TeacherForcer(torch.nn.Module):
         l_mask = torch.zeros(len(self.valency_map), dtype=torch.float, device=self.device)
         l_mask[-1] = float('-inf')
         return l_mask.repeat(length, 1)
-
-
-    def to_rdkit(self, data):
-        node_list = []
-        for i in range(data.x.size()[0]):
-            node_list.append(self.to_atom(data.x[i]))
-
-        # create empty editable mol object
-        mol = Chem.RWMol()
-        # add atoms to mol and keep track of index
-        node_to_idx = {}
-        invalid_idx = set([])
-        for i in range(len(node_list)):
-            if node_list[i] == 'Stop' or node_list[i] == 'H':
-                invalid_idx.add(i)
-                continue
-            a = Chem.Atom(node_list[i])
-            molIdx = mol.AddAtom(a)
-            node_to_idx[i] = molIdx
-
-        added_bonds = set([])
-        for i in range(0, data.edge_index.size()[1]):
-            ix = data.edge_index[0][i].item()
-            iy = data.edge_index[1][i].item()
-            bond = self.to_bond(data.edge_attr[i])
-            # add bonds between adjacent atoms
-            if (str((ix, iy)) in added_bonds) or (str((iy, ix)) in added_bonds) or (iy in invalid_idx or ix in invalid_idx):
-                continue
-            # add relevant bond type (there are many more of these)
-            if bond == 0:
-                continue
-            elif bond == 1:
-                bond_type = Chem.rdchem.BondType.SINGLE
-                mol.AddBond(node_to_idx[ix], node_to_idx[iy], bond_type)
-            elif bond == 2:
-                bond_type = Chem.rdchem.BondType.DOUBLE
-                mol.AddBond(node_to_idx[ix], node_to_idx[iy], bond_type)
-            elif bond == 3:
-                bond_type = Chem.rdchem.BondType.TRIPLE
-                mol.AddBond(node_to_idx[ix], node_to_idx[iy], bond_type)
-
-            added_bonds.add(str((ix, iy)))
-
-        # Convert RWMol to Mol object
-        mol = mol.GetMol()
-        mol_frags = rdmolops.GetMolFrags(mol, asMols=True, sanitizeFrags=False)
-        largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
-
-        return largest_mol
-
-    def mol_to_svg(self, mol, molSize=(300, 300), kekulize=True, sanitize=True):
-        mc = Chem.Mol(mol.ToBinary())
-        if kekulize:
-            try:
-                Chem.Kekulize(mc)
-            except:
-                mc = Chem.Mol(mol.ToBinary())
-        if sanitize:
-            try:
-                Chem.SanitizeMol(mc)
-            except:
-                mc = Chem.Mol(mol.ToBinary())
-        if not mc.GetNumConformers():
-            rdDepictor.Compute2DCoords(mc)
-        drawer = rdMolDraw2D.MolDraw2DSVG(molSize[0], molSize[1])
-        drawer.DrawMolecule(mc)
-        drawer.FinishDrawing()
-        svg = drawer.GetDrawingText()
-        return svg.replace('svg:', '')
 
     def forward(self, data_pocket, data_ligand, generate=False):
         # Initialise data variables -------------------------
@@ -206,7 +127,7 @@ class TeacherForcer(torch.nn.Module):
         adj = torch.zeros(lab_v.shape[0], lab_v.shape[0], device=self.device, dtype=torch.bool)
 
         # helper variables
-        valencies = torch.tensor([self.valency_map[self.to_atom(lab_v[i])] for i in range(lab_v.size()[0])], device=self.device)
+        valencies = torch.tensor([self.valency_map[to_atom(lab_v[i], self.device)] for i in range(lab_v.size()[0])], device=self.device)
         closed_mask = torch.zeros_like(valencies, device=self.device, dtype=torch.bool)
         time = torch.tensor(0, device=self.device)
 
@@ -271,7 +192,7 @@ class TeacherForcer(torch.nn.Module):
                 p_att_uv = self.h(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_mask, adj), gumbel=generate)
             else:
                 # only mask
-                p_att_uv = self.h(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_mask, adj, unmask_bond=torch.tensor([self.to_bond(v_attr.unsqueeze(0))]))
+                p_att_uv = self.h(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_mask, adj, unmask_bond=torch.tensor([to_bond_index(v_attr.unsqueeze(0), self.device)]))
                                   , gumbel=generate)
             edge_type = p_att_uv
             if not generate:
@@ -282,7 +203,7 @@ class TeacherForcer(torch.nn.Module):
             edge_attr = torch.cat([edge_attr, edge_type.unsqueeze(0), edge_type.unsqueeze(0)])
 
             # update valencies
-            bond_valency = self.to_bond(edge_type.unsqueeze(0))
+            bond_valency = to_bond_valency(edge_type.unsqueeze(0), self.device)
             valencies[int(u.item())] -= bond_valency
             valencies[int(v.item())] -= bond_valency
 

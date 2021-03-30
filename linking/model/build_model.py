@@ -31,8 +31,8 @@ def build_forcer_model(config: Config, device) -> nn.Module:
 
     edge_feature_size = 1 + config.pocket_encoder_out_channels + 2*(config.graph_encoder_out_channels + config.num_allowable_atoms) + (config.ligand_encoder_out_channels + config.num_allowable_atoms) + (config.graph_encoder_out_channels + config.num_allowable_atoms)
     linear_edge_selector = LinearEdgeSelector(edge_feature_size)
-    linear_edge_classifier = LinearEdgeClassifier(edge_feature_size)
-    linear_edge_row_classifier = LinearEdgeRowClassifier(edge_feature_size)
+    linear_edge_classifier = LinearEdgeClassifier(edge_feature_size, config.num_allowable_bonds)
+    linear_edge_row_classifier = LinearEdgeRowClassifier(edge_feature_size, config.num_allowable_bonds)
 
     model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_row_classifier, config, device)
     return model

@@ -25,19 +25,24 @@ allowable_rdkit_bonds = [
 ]
 
 ligand_bond_to_one_hot = {
-    "1": [1., 0., 0.],
-    "2": [0., 1., 0.],
-    "3": [0., 0., 1.],
-    "ar": [1., 0., 0.],
-    "am": [1., 0., 0.],
+    "1": [1., 0., 0., 0.],
+    "2": [0., 1., 0., 0.],
+    "3": [0., 0., 1., 0.],
+    "ar": [0., 0., 0., 1.],
+    "am": [1., 0., 0., 0.],
 }
 
 pocket_bond_to_one_hot = {
-    Chem.rdchem.BondType.AROMATIC: [1., 0., 0.],
-    Chem.rdchem.BondType.SINGLE: [1., 0., 0.],
-    Chem.rdchem.BondType.DOUBLE: [0., 1., 0.],
-    Chem.rdchem.BondType.TRIPLE: [0., 0., 1.],
+    Chem.rdchem.BondType.AROMATIC: [0., 0., 0., 1.],
+    Chem.rdchem.BondType.SINGLE: [1., 0., 0., 0.],
+    Chem.rdchem.BondType.DOUBLE: [0., 1., 0., 0.],
+    Chem.rdchem.BondType.TRIPLE: [0., 0., 1., 0.],
 }
+
+empty_bond = [0., 0., 0., 0.]
+
+allowable_angles = [120, 109, 60]
+allowable_dyhedrals = [180, 120, 60, 0]
 
 def split_multi_mol2_file(path, dir_name):
     delimiter = '@<TRIPOS>MOLECULE'
@@ -141,7 +146,7 @@ def bfs(geom_graph):
         attrib_copy.append(bfs_attributes[i])
         if i == len(bfs_edges)-1 or bfs_edges[i+1][0] != bfs_edges[i][0]:
             edges_copy.append((bfs_edges[i][0], -1))
-            attrib_copy.append(torch.tensor([0., 0., 0.], dtype=torch.float))
+            attrib_copy.append(torch.tensor(empty_bond, dtype=torch.float))
 
     return [torch.tensor([e[0], e[1]], dtype=torch.long) for e in edges_copy], attrib_copy
 
@@ -299,3 +304,14 @@ def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
     )
 
     return geom_graph
+
+def to_atom(t, device=None):
+    return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=device)).item())]
+
+def to_bond_valency(t, device=None):
+    t_s = t.squeeze()
+    return [1, 2, 3, 2][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=device)).item())]
+
+def to_bond_index(t, device=None):
+    t_s = t.squeeze()
+    return [1, 2, 3, 4][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=device)).item())]
