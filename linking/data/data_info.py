@@ -110,8 +110,16 @@ def getAngleTypes():
     d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
 
     def vec_angle(vec1, vec2):
+        """ Returns the absolute cosine angle in degrees between vectors 'vec1' and 'vec2' """
         angle = np.arccos(vec1.dot(vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
         return angle
+
+    def signed_vec_angle(vec1, vec2):
+        """ Returns the signed angle in degrees between vectors 'vec1' and 'vec2' """
+        normal = np.array((0, 0, 1))  # normal to xy plane
+        angle = np.arccos(vec1.dot(vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+        cross = np.cross(vec1, vec2)
+        return angle if np.dot(normal, cross) > 0 else -angle
 
     Q = []    # returns true if new things were added, i.e. we have new angles to calculate
     def qpush(edge):
@@ -128,8 +136,6 @@ def getAngleTypes():
     dyhedrals = {'0': 0}
     nan_count = 0
 
-
-
     for data in d:
         def edge_vec(edge):
             return data.x[edge[1]][1:4].numpy() - data.x[edge[0]][1:4].numpy()
@@ -139,13 +145,13 @@ def getAngleTypes():
         for i in range(0, len(data.bfs_index)):
             have_new_node = qpush(data.bfs_index[i])
             queue_length = len(Q)
-            vec = np.zeros(2)
-            base_vec = np.zeros(2)
-            plane_base_vec = np.zeros(2)
+            vec = np.zeros(3)
+            base_vec = np.zeros(3)
+            base_plane = np.zeros(3)
             if have_new_node and queue_length >= 2:  # new angle available
                 vec = edge_vec(Q[queue_length-1])
                 base_vec = edge_vec(Q[queue_length-2])
-                angle = vec_angle(vec, base_vec)
+                angle = signed_vec_angle(vec, base_vec)
                 angle = (angle / np.pi) * 180
                 if math.isnan(angle):
                     nan_count += 1
@@ -159,7 +165,7 @@ def getAngleTypes():
                 plane, base_plane = (np.cross(vec, base_vec), np.cross(base_vec, dehydral_base_vec))
                 # plane = plane / np.linalg.norm(plane)
                 # base_plane = base_plane / np.linalg.norm(base_plane)
-                dyhedral = vec_angle(plane, base_plane)
+                dyhedral = signed_vec_angle(plane, base_plane)
                 dyhedral = (dyhedral / np.pi) * 180
                 if math.isnan(dyhedral):
                     nan_count += 1
@@ -170,7 +176,7 @@ def getAngleTypes():
                     dyhedrals[str(int(dyhedral))] = 1
 
     for dic in [angles, dyhedrals]:
-        dic = {k: v for k, v in dic.items() if v > 2000}
+        dic = {k: v for k, v in dic.items() if v > 1000}
         sorted_tupples = sorted([(k, v) for k, v in dic.items()], key=lambda e: e[1])
         x = [e[0] for e in sorted_tupples]
         y = [e[1] for e in sorted_tupples]
