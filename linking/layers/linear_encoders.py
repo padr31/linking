@@ -67,9 +67,9 @@ class LinearEdgeRowClassifier(torch.nn.Module):
            We reduce the vector into 3 numbers, and return the argmax, as
        '''
 
-    def __init__(self, in_channels: int) -> None:
+    def __init__(self, in_channels: int, out_channels: int) -> None:
         super(LinearEdgeRowClassifier, self).__init__()
-        self.linear = torch.nn.Linear(in_channels, 3)
+        self.linear = torch.nn.Linear(in_channels, out_channels)
 
     def forward(self, x, mask=None, gumbel=False):
         x = self.linear(x)
@@ -88,9 +88,9 @@ class LinearEdgeClassifier(torch.nn.Module):
         Edges are passed in as features of type phi(u,v) = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, z_g]
         We reduce the vector into 3 numbers, and return the argmax, as
     '''
-    def __init__(self, in_channels: int) -> None:
+    def __init__(self, in_channels: int, out_channels: int) -> None:
         super(LinearEdgeClassifier, self).__init__()
-        self.linear = torch.nn.Linear(in_channels, 3)
+        self.linear = torch.nn.Linear(in_channels, out_channels)
 
     def forward(self, x, mask=None, gumbel=False):
         x = self.linear(x)
