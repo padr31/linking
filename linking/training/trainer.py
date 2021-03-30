@@ -9,7 +9,8 @@ from tqdm import tqdm
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data
 from linking.config.config import Config
-from linking.data.data_eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count
+from linking.data.data_eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count, \
+    to_rdkit, rdkit_sanitize, mol_to_svg, qed_score
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 
@@ -78,7 +79,7 @@ class Trainer:
 
     def eval(self, epoch):
         self.model.eval()
-        eval_data = [0, 1, 2]
+        eval_data = self.config.eval_data
 
         for i in eval_data:
             x_ligand = self.X_ligand_train[i]
@@ -86,27 +87,49 @@ class Trainer:
             protein_name = str(x_ligand.name.split('/')[-1].split('_')[0])
 
             tanimoto = 0
-            nhoh_count = 0
-            ring_count = 0
 
-            ligand_mol = self.model.to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr))
+            nhoh_count = 0
+            nhoh_count_items = 1
+
+            ring_count = 0
+            ring_count_items = 1
+
+            qed_score_count = 0
+            qed_score_count_items = 1
+
+            ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr))
             ligand_fingerprint = rdkit_fingerprint(ligand_mol)
-            ligand_svg = self.model.mol_to_svg(ligand_mol)
+            ligand_svg = mol_to_svg(ligand_mol)
             with open("out_svg/ligand_" + "_" + protein_name + ".svg", "w") as svg_file:
                 svg_file.write(ligand_svg)
 
             for j in range(self.config.num_eval_generate):
                 pred_generate = self.model(x_pocket, x_ligand, generate=True)
 
-                generated_ligand_mol = self.model.to_rdkit(
+                generated_ligand_mol = to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2]))
 
+                generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
                 generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
                 generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
                 tanimoto += generated_ligand_tanimoto / self.config.num_eval_generate
-                # nhoh_count += lipinski_nhoh_count(generated_ligand_mol) / self.config.num_eval_generate
-                # ring_count += lipinski_ring_count(generated_ligand_mol) / self.config.num_eval_generate
-                generated_ligand_svg = self.model.mol_to_svg(generated_ligand_mol)
+
+                nhoh_c = lipinski_nhoh_count(generated_ligand_mol)
+                if not nhoh_c is None:
+                    nhoh_count += nhoh_c
+                    nhoh_count_items += 1
+
+                ring_c = lipinski_ring_count(generated_ligand_mol)
+                if not ring_c is None:
+                    ring_count += ring_c
+                    ring_count_items += 1
+
+                qed_s = qed_score(generated_ligand_mol)
+                if not qed_s is None:
+                    qed_score_count += qed_s
+                    qed_score_count_items += 1
+
+                generated_ligand_svg = mol_to_svg(generated_ligand_mol)
                 with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
                     svg_file.write(generated_ligand_svg)
 
@@ -114,8 +137,13 @@ class Trainer:
                 # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
 
             self.writers[str(i)].add_scalar('Tanimoto', tanimoto, epoch)
-            self.writers[str(i)].add_scalar('NHOH Count', nhoh_count, epoch)
-            self.writers[str(i)].add_scalar('Ring Count', ring_count, epoch)
+            self.writers[str(i)].add_scalar('NHOH Count', nhoh_count/nhoh_count_items, epoch)
+            self.writers[str(i)].add_scalar('Ring Count', ring_count/nhoh_count_items, epoch)
+            self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
+
+            print("Valid QED scores: " + str(qed_score_count_items/self.config.num_eval_generate))
+            print("Valid ring counts: " + str(ring_count_items/self.config.num_eval_generate))
+            print("Valid nhoh counts: " + str(nhoh_count_items/self.config.num_eval_generate))
             print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
 
     def test(self) -> None:
