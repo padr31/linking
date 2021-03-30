@@ -14,14 +14,15 @@ class Config(BaseModel):
 
     # Data stuff
     train_test_ratio: int = 4
-    num_train: int = 128
-    eval_data: list = [0, 1, 2]
-    num_eval_generate: int = 20
+    num_train: int = 1024
+    eval_data: list = [0, 1]
+    num_eval_generate: int = 10
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    batch_size: int = 32
+    batch_size: int = 16
     num_allowable_atoms = 11
+    num_allowable_bonds = 4
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4
     pocket_encoder_out_channels: int = 50
