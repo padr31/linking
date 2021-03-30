@@ -94,7 +94,8 @@ class PDBPocketDataset(InMemoryDataset):
         data, slices = self.collate(graphs)
         torch.save((data, slices), self.processed_paths[0])
 
-# d = LigandDataset(root="/Users/padr/repos/linking/datasets")
+# d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb/")
+# d = PDBPocketDataset(root="/Users/padr/repos/linking/datasets/pdb/")
 # g = pdb_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb')
 # g = mol2_file_to_torch_geometric('/Users/padr/repos/linking/datasets/raw/refined-set/4rdn/4rdn_ligand.mol2')
 
