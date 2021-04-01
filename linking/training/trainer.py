@@ -97,7 +97,7 @@ class Trainer:
             qed_score_count = 0
             qed_score_count_items = 1
 
-            ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr))
+            ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr), device=self.model.device)
             ligand_fingerprint = rdkit_fingerprint(ligand_mol)
             ligand_svg = mol_to_svg(ligand_mol)
             with open("out_svg/ligand_" + "_" + protein_name + ".svg", "w") as svg_file:
@@ -107,7 +107,7 @@ class Trainer:
                 pred_generate = self.model(x_pocket, x_ligand, generate=True)
 
                 generated_ligand_mol = to_rdkit(
-                    Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2]))
+                    Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2]), device=self.model.device)
 
                 generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
                 generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)

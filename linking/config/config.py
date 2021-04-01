@@ -9,18 +9,18 @@ class Config(BaseModel):
     dataset_root_dude: str = "./datasets/dude/"
     save_model: str = "./out_model/"
     logdir: str = "./out_logdir/"
-    num_epochs: int = 15
+    num_epochs: int = 10
     learning_rate: float = 0.003
 
     # Data stuff
-    train_test_ratio: int = 4
-    num_train: int = 512
-    eval_data: list = [0, 1]
-    num_eval_generate: int = 10
+    train_test_ratio: int = 10
+    num_train: int = 2048
+    eval_data: list = [0, 1, 2, 3, 4]
+    num_eval_generate: int = 20
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    batch_size: int = 8
+    batch_size: int = 1
     num_allowable_atoms = 11
     num_allowable_bonds = 4
 
@@ -30,9 +30,4 @@ class Config(BaseModel):
     ligand_encoder_out_channels: int = 50
     graph_encoder_in_channels: int = num_allowable_atoms
     graph_encoder_out_channels: int = 50
-    num_expansion_nodes: int = 50
-    num_max_generated_atoms: int = 30
-    num_max_generated_edges: int = 4*num_max_generated_atoms
-
-    p_num_feats: int = 10
-    m_num_feats: int = 10
+    sch_net_hidden_channels: int = 64

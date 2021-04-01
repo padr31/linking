@@ -6,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
-from linking.data.data_util import parse_mol2_bonds
+from linking.data.data_util import parse_mol2_bonds, to_atom, to_bond_index, calc_angle, calc_dihedral, calc_position, calc_dihedral_2, get_dihedral, get_angle, position_point
 from linking.data.torchgeom_pdb_loader import PDBLigandDataset
 import matplotlib.pyplot as plt
 
@@ -145,28 +145,27 @@ def getAngleTypes():
         for i in range(0, len(data.bfs_index)):
             have_new_node = qpush(data.bfs_index[i])
             queue_length = len(Q)
-            vec = np.zeros(3)
-            base_vec = np.zeros(3)
-            base_plane = np.zeros(3)
             if have_new_node and queue_length >= 2:  # new angle available
                 vec = edge_vec(Q[queue_length-1])
                 base_vec = edge_vec(Q[queue_length-2])
-                angle = signed_vec_angle(vec, base_vec)
-                angle = (angle / np.pi) * 180
-                if math.isnan(angle):
+                angle = calc_angle(base_vec, vec)
+                angle_degrees = (angle / np.pi) * 180
+                if math.isnan(angle_degrees):
                     nan_count += 1
                     continue
-                if str(int(angle)) in angles:
-                    angles[str(int(angle))] += 1
+                if str(int(angle_degrees)) in angles:
+                    angles[str(int(angle_degrees))] += 1
                 else:
-                    angles[str(int(angle))] = 1
+                    angles[str(int(angle_degrees))] = 1
             if have_new_node and queue_length >= 3:  # new dyhedral available
-                dehydral_base_vec = edge_vec(Q[queue_length-3])
-                plane, base_plane = (np.cross(vec, base_vec), np.cross(base_vec, dehydral_base_vec))
-                # plane = plane / np.linalg.norm(plane)
-                # base_plane = base_plane / np.linalg.norm(base_plane)
-                dyhedral = signed_vec_angle(plane, base_plane)
-                dyhedral = (dyhedral / np.pi) * 180
+                dihedral_base_vec = edge_vec(Q[queue_length-3])
+                dih = calc_dihedral(dihedral_base_vec, base_vec, vec)
+
+                p3 = data.x[Q[queue_length-1][0]][1:4].numpy()
+                p4 = data.x[Q[queue_length-1][1]][1:4].numpy()
+                new_pos = calc_position(dihedral_base_vec, base_vec, p3, np.linalg.norm(p4-p3), angle, dih)
+                assert np.linalg.norm(p4 - new_pos) < 0.01
+                dyhedral = (dih / np.pi) * 180
                 if math.isnan(dyhedral):
                     nan_count += 1
                     continue
@@ -191,4 +190,36 @@ def getAngleTypes():
     print('Nan count:')
     print(nan_count)
 
+def getDistanceTypes():
+    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
+
+    distances = {}
+
+    for data in d:
+        def edge_vec(edge):
+            return data.x[edge[1]][1:4].numpy() - data.x[edge[0]][1:4].numpy()
+
+        def bond_symbol(bond_index):
+            return ['-', '=', ':=:', '..'][bond_index-1]
+
+        print("Pocessing " + str(data.name))
+        for i in range(0, len(data.edge_index[0])):
+            edge = (data.edge_index[0][i], data.edge_index[1][i])
+            bond = to_bond_index(data.edge_attr[i])
+            bond_sym = bond_symbol(bond)
+            atom1 = to_atom(data.x[edge[0]][4:])
+            atom2 = to_atom(data.x[edge[1]][4:])
+            vec = edge_vec(edge)
+            dist = np.linalg.norm(vec)
+            key = atom1 + bond_sym + atom2
+            if not key in distances:
+                distances[key] = []
+            distances[key].append(dist)
+
+    print("{")
+    for key in distances:
+        arr = np.array(distances[key])
+        print('"' + key + '":' + str(np.mean(arr)) + ",")
+        # print(key + " num: " + str(len(arr)) + ", mean-length: " + str(np.mean(arr)) + ", std: " + str(np.std(arr)))
+    print("}")
 getAngleTypes()

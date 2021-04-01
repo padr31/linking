@@ -25,10 +25,10 @@ def mol_to_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True):
     svg = drawer.GetDrawingText()
     return svg.replace('svg:', '')
 
-def to_rdkit(data):
+def to_rdkit(data, device=None):
     node_list = []
     for i in range(data.x.size()[0]):
-        node_list.append(to_atom(data.x[i]))
+        node_list.append(to_atom(data.x[i], device=device))
 
     # create empty editable mol object
     mol = Chem.RWMol()
@@ -47,7 +47,7 @@ def to_rdkit(data):
     for i in range(0, data.edge_index.size()[1]):
         ix = data.edge_index[0][i].item()
         iy = data.edge_index[1][i].item()
-        bond = to_bond_index(data.edge_attr[i])
+        bond = to_bond_index(data.edge_attr[i], device=device)
         # add bonds between adjacent atoms
         if (str((ix, iy)) in added_bonds) or (str((iy, ix)) in added_bonds) or (iy in invalid_idx or ix in invalid_idx):
             continue

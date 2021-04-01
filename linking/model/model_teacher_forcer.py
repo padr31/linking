@@ -44,7 +44,7 @@ class TeacherForcer(torch.nn.Module):
         zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
         one_row = torch.tensor([0., float('-inf'), float('-inf'), 0.0], device=self.device, dtype=torch.float)
         two_row = torch.tensor([0., 0., float('-inf'), 0.0], device=self.device, dtype=torch.float)
-        e_mask = torch.zeros(valencies.size(0), self.config.num_allowable_bonds)
+        e_mask = torch.zeros(valencies.size(0), self.config.num_allowable_bonds, device=self.device)
         e_mask[valencies <= 2] = two_row
         e_mask[valencies <= 1] = one_row
         e_mask[valencies <= 0] = zero_row
@@ -62,7 +62,7 @@ class TeacherForcer(torch.nn.Module):
         zero_row = torch.tensor([float('-inf'), float('-inf'), float('-inf'), float('-inf')], device=self.device, dtype=torch.float)
         one_row = torch.tensor([0., float('-inf'), float('-inf'), 0.0], device=self.device, dtype=torch.float)
         two_row = torch.tensor([0., 0., float('-inf'), 0.0], device=self.device, dtype=torch.float)
-        e_mask = torch.zeros(self.config.num_allowable_bonds)
+        e_mask = torch.zeros(self.config.num_allowable_bonds, device=self.device)
         if min(valencies[u], valencies[v]) <= 2:
             e_mask = two_row
         if min(valencies[u], valencies[v]) <= 1:

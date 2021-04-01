@@ -315,3 +315,228 @@ def to_bond_valency(t, device=None):
 def to_bond_index(t, device=None):
     t_s = t.squeeze()
     return [1, 2, 3, 4][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=device)).item())]
+
+def to_bond_symbol(t, device=None):
+    return ['-', '=', ':=:', '..'][to_bond_index(t, device) - 1]
+
+def calc_angle(v2, v3):
+    uvec1 = v2 / np.linalg.norm(v2)
+    uvec2 = v3 / np.linalg.norm(v3)
+    return np.arccos(np.dot(uvec1, uvec2))
+
+def calc_dihedral(v1, v2, v3):
+    """
+       Calculate dihedral angle between 4 atoms
+       For more information, see:
+           http://math.stackexchange.com/a/47084
+    """
+    # Normal vector of plane containing v1,v2
+    n1 = np.cross(v1, v2)
+    n1 = n1 / np.linalg.norm(n1)
+
+    # Normal vector of plane containing v2,v3
+    n2 = np.cross(v2, v3)
+    n2 = n2 / np.linalg.norm(n2)
+
+    # un1, ub2, and um1 form orthonormal frame
+    uv2 = v2 / np.linalg.norm(v2)
+    m1 = np.cross(n1, uv2)
+    m1 = m1 / np.linalg.norm(m1)
+
+    # dot(ub2, n2) is always zero
+    x = np.dot(n1, n2)
+    y = np.dot(m1, n2)
+
+    dihedral = np.arctan2(y, x)
+    return dihedral
+
+def calc_dihedral_2(v1, v2, v3):
+    return np.arctan2(np.dot(v2, np.cross(np.cross(v1, v2), np.cross(v2, v3))), np.linalg.norm(v2)*np.dot(np.cross(v1, v2), np.cross(v2, v3)))
+
+dst = np.linalg.norm(np.array([0., 2., -2.]))
+print(dst)
+ang = calc_angle(np.array([1., 0., 0.]), np.array([0., 2., -2.]))
+print(ang)
+dih = calc_dihedral(np.array([0., 0., -1.]), np.array([1., 0., 0.]), np.array([0., 2., -2.]))
+print(dih)
+
+def calc_position(v1, v2, p3, dst, ang, dih):
+    """Calculate position x of another atom based on
+       internal coordinates between v1, v2, (p3,x)
+       using distance, angle, and dihedral angle.
+    """
+    # Normal vector of plane containing v1,v2
+    n1 = np.cross(v1, v2)
+    n1 = n1 / np.linalg.norm(n1)
+
+    # un1, ub2, and um1 form orthonormal frame
+    uv2 = v2 / np.linalg.norm(v2)
+    m1 = np.cross(n1, uv2)
+    m1 = m1 / np.linalg.norm(m1)
+
+    n2 = np.cos(dih)*n1 + np.sin(dih)*m1
+    n2 = n2 / np.linalg.norm(n2)
+
+    nn2 = np.cross(n2, uv2)
+    nn2 = nn2 / np.linalg.norm(nn2)
+    v3 = np.cos(ang)*uv2 + np.sin(ang)*nn2
+    v3 = v3 / np.linalg.norm(v3)
+
+    position = p3 + dst * v3
+
+    return position
+
+print(calc_position(np.array([0., 0., -1.]), np.array([1., 0., 0.]), np.array([1., 0., 0.]), dst, ang, dih))
+
+def get_angle(v2, v3) -> float:
+    """
+    Compute angle between points i, j, and k
+    :param p_i: point i
+    :param p_j: point j
+    :param p_k: point k
+    :return: angle in radians
+    """
+    rij = v3
+    rkj = -v2
+
+    sin_theta = np.linalg.norm(np.cross(rij, rkj))
+    cos_theta = np.dot(rij, rkj)
+    return np.arctan2(sin_theta, cos_theta)
+
+def get_dihedral(v1, v2, v3) -> float:
+    """
+    Return dihedral between points i, j, k, and l.
+    :param p_i: point i
+    :param p_j: point j
+    :param p_k: point k
+    :param p_l: point l
+    :return: dihedral angle in radians
+    """
+    r_ji = -v3
+    r_kj = -v2
+    r_lk = -v1
+
+    v1 = np.cross(r_ji, r_kj)
+    v1 = v1 / np.linalg.norm(v1)
+
+    v2 = np.cross(r_lk, r_kj)
+    v2 = v2 / np.linalg.norm(v2)
+
+    m1 = np.cross(v1, r_kj) / np.linalg.norm(r_kj)
+
+    x = np.dot(v1, v2)
+    y = np.dot(m1, v2)
+
+    psi = np.arctan2(y, x)
+    if psi < 0:
+        return -psi - np.pi
+    else:
+        return np.pi - psi
+
+
+def position_point(v1: np.ndarray, v2: np.ndarray, p3: np.ndarray, distance: float, angle: float,
+                   dihedral: float) -> np.ndarray:
+    """
+    Determine point p in space that is:
+        - <distance> far from p2
+        - <angle> between p2 and p1
+        - <dihedral> between p2, p1, and p0
+    :param p0: position for dihedral
+    :param p1: position for angle
+    :param p2: position for distance
+    :param distance: distance between p and v2
+    :param angle: angle between p, p2 and p1
+    :param dihedral: dihedral angle between p, p2, p1, and p0
+    :return: coordinates of p
+    """
+    x = distance * np.cos(angle)
+    y = distance * np.cos(dihedral) * np.sin(angle)
+    z = distance * np.sin(dihedral) * np.sin(angle)
+
+    v_a = v1
+
+    v_b = v2
+    v_b = v_b / np.linalg.norm(v_b)
+
+    c_ab = np.cross(v_a, v_b)
+    c_ab = c_ab / np.linalg.norm(c_ab)
+
+    c_ab_b = np.cross(c_ab, v_b)
+
+    return p3 - v_b * x + c_ab_b * y + c_ab * z
+
+bond_lengths = {
+"C-N":1.4107755,
+"C-C":1.5150901,
+"C..O":1.255712,
+"C=O":1.2334914,
+"N-C":1.4107754,
+"C-S":1.7459718,
+"S-C":1.7459718,
+"C..C":1.4013792,
+"N-H":1.0122557,
+"C-H":1.095748,
+"O..C":1.255712,
+"O=C":1.2334915,
+"H-N":1.0122557,
+"H-C":1.095748,
+"C=C":1.3827366,
+"C-O":1.4193139,
+"O-P":1.603689,
+"P..O":1.5154448,
+"O-C":1.4193139,
+"P-O":1.603689,
+"O..P":1.5154448,
+"P-N":1.6737605,
+"C=N":1.3358338,
+"O-H":0.9500009,
+"N-P":1.6737605,
+"N=C":1.3358338,
+"H-O":0.9500009,
+"S=O":1.4604245,
+"N..C":1.3490263,
+"C..N":1.3490263,
+"N-S":1.6302401,
+"O=S":1.4604245,
+"S-N":1.6302402,
+"N-N":1.3555375,
+"N=O":1.2924565,
+"O=N":1.2924569,
+"C-F":1.3404396,
+"C-Cl":1.7358768,
+"F-C":1.3404396,
+"Cl-C":1.7358768,
+"P-C":1.8017883,
+"C-P":1.8017882,
+"S-H":1.008008,
+"H-S":1.008008,
+"N-O":1.374657,
+"O-N":1.374657,
+"C-I":2.1217341,
+"I-C":2.1217341,
+"C-Br":1.897452,
+"Br-C":1.897452,
+"S..O":1.4803548,
+"O..S":1.4803548,
+"P=O":1.5383024,
+"O=P":1.5383024,
+"N=N":1.3202432,
+"C:=:N":1.1414758,
+"N:=:C":1.1414758,
+"C:=:C":1.1998755,
+"S=N":1.5981185,
+"N=S":1.5981185,
+"S-S":2.046078,
+"O-S":1.5391866,
+"S-O":1.5391866,
+"P=S":1.9899822,
+"S=P":1.9899822,
+"N..N":1.3403707,
+"C=S":1.6924675,
+"S=C":1.6924675,
+"P-H":1.0079916,
+"H-P":1.0079916,
+"P-S":2.0013974,
+"S-P":2.0013974,
+"N:=:N":1.1924888,
+}
