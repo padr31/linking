@@ -24,6 +24,10 @@ class Config(BaseModel):
     num_allowable_atoms = 11
     num_allowable_bonds = 4
 
+    # TODO TODO TODO FIX THIS BEFORE RUNNING
+    num_allowable_angles = 5
+    num_allowable_dihedrals = 5
+
     pocket_encoder_in_channels: int = num_allowable_atoms+4
     pocket_encoder_out_channels: int = 50
     ligand_encoder_in_channels: int = num_allowable_atoms+4

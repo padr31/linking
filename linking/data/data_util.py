@@ -42,7 +42,7 @@ pocket_bond_to_one_hot = {
 empty_bond = [0., 0., 0., 0.]
 
 allowable_angles = [120, 109, 60]
-allowable_dyhedrals = [180, 120, 60, 0]
+allowable_dihedrals = [180, 120, 60, 0]
 
 def split_multi_mol2_file(path, dir_name):
     delimiter = '@<TRIPOS>MOLECULE'
@@ -149,6 +149,44 @@ def bfs(geom_graph):
             attrib_copy.append(torch.tensor(empty_bond, dtype=torch.float))
 
     return [torch.tensor([e[0], e[1]], dtype=torch.long) for e in edges_copy], attrib_copy
+
+def bfs_distance(start, adj):
+    '''
+        Perform BFS on the adj and return distances to start node.
+    '''
+    dist = [100] * adj.size()[0]
+    # Visited vector to so that a
+    # vertex is not visited more than
+    # once Initializing the vector to
+    # false as no vertex is visited at
+    # the beginning
+    visited = [False] * adj.size()[0]
+    q = [start]
+
+    # Set source as visited
+    visited[start] = True
+    dist[start] = 0
+
+    while q:
+        vis = q[0]
+
+        # Print current node
+        print(vis, end=' ')
+        q.pop(0)
+
+        # For every adjacent vertex to
+        # the current vertex
+        for i in range(adj.size()[0]):
+            if (adj[vis][i] and
+                    (not visited[i])):
+                # Push the adjacent node
+                # in the queue
+                q.append(i)
+                dist[i] = dist[visited] + 1
+
+                # set
+            visited[i] = True
+    return dist
 
 def parse_mol2_bonds(filename):
     with open(filename, "r") as f:
@@ -319,6 +357,11 @@ def to_bond_index(t, device=None):
 def to_bond_symbol(t, device=None):
     return ['-', '=', ':=:', '..'][to_bond_index(t, device) - 1]
 
+def to_bond_length(a1, a2, bond, device=None):
+    key = to_atom(a1, device) + to_bond_symbol(bond, device) + to_atom(a2, device)
+    x = allowable_bond_lengths[key] if key in allowable_bond_lengths else allowable_bond_lengths['arbitrary']
+    return torch.tensor(x, device=device)
+
 def calc_angle(v2, v3):
     uvec1 = v2 / np.linalg.norm(v2)
     uvec2 = v3 / np.linalg.norm(v3)
@@ -350,16 +393,6 @@ def calc_dihedral(v1, v2, v3):
     dihedral = np.arctan2(y, x)
     return dihedral
 
-def calc_dihedral_2(v1, v2, v3):
-    return np.arctan2(np.dot(v2, np.cross(np.cross(v1, v2), np.cross(v2, v3))), np.linalg.norm(v2)*np.dot(np.cross(v1, v2), np.cross(v2, v3)))
-
-dst = np.linalg.norm(np.array([0., 2., -2.]))
-print(dst)
-ang = calc_angle(np.array([1., 0., 0.]), np.array([0., 2., -2.]))
-print(ang)
-dih = calc_dihedral(np.array([0., 0., -1.]), np.array([1., 0., 0.]), np.array([0., 2., -2.]))
-print(dih)
-
 def calc_position(v1, v2, p3, dst, ang, dih):
     """Calculate position x of another atom based on
        internal coordinates between v1, v2, (p3,x)
@@ -386,10 +419,10 @@ def calc_position(v1, v2, p3, dst, ang, dih):
 
     return position
 
-print(calc_position(np.array([0., 0., -1.]), np.array([1., 0., 0.]), np.array([1., 0., 0.]), dst, ang, dih))
 
 def get_angle(v2, v3) -> float:
     """
+    From Simm. et. al.
     Compute angle between points i, j, and k
     :param p_i: point i
     :param p_j: point j
@@ -405,6 +438,7 @@ def get_angle(v2, v3) -> float:
 
 def get_dihedral(v1, v2, v3) -> float:
     """
+    From Simm. et. al.
     Return dihedral between points i, j, k, and l.
     :param p_i: point i
     :param p_j: point j
@@ -437,6 +471,7 @@ def get_dihedral(v1, v2, v3) -> float:
 def position_point(v1: np.ndarray, v2: np.ndarray, p3: np.ndarray, distance: float, angle: float,
                    dihedral: float) -> np.ndarray:
     """
+    From Simm. et. al.
     Determine point p in space that is:
         - <distance> far from p2
         - <angle> between p2 and p1
@@ -465,7 +500,7 @@ def position_point(v1: np.ndarray, v2: np.ndarray, p3: np.ndarray, distance: flo
 
     return p3 - v_b * x + c_ab_b * y + c_ab * z
 
-bond_lengths = {
+allowable_bond_lengths = {
 "C-N":1.4107755,
 "C-C":1.5150901,
 "C..O":1.255712,
@@ -539,4 +574,5 @@ bond_lengths = {
 "P-S":2.0013974,
 "S-P":2.0013974,
 "N:=:N":1.1924888,
+"arbitrary": 1.5150901,
 }

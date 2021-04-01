@@ -34,6 +34,10 @@ def build_forcer_model(config: Config, device) -> nn.Module:
     linear_edge_classifier = LinearEdgeClassifier(edge_feature_size, config.num_allowable_bonds)
     linear_edge_row_classifier = LinearEdgeRowClassifier(edge_feature_size, config.num_allowable_bonds)
 
+    coords_feature_size = 100
+    linear_edge_angle_classifier = LinearEdgeRowClassifier(coords_feature_size, config.num_allowable_angles)
+    linear_edge_dihedral_classifier = LinearEdgeRowClassifier(coords_feature_size, config.num_allowable_dihedrals)
+
     model = TeacherForcer(pocket_encoder, ligand_encoder, graph_encoder, linear_atom_classifier, linear_edge_selector, linear_edge_row_classifier, config, device)
     return model
 
