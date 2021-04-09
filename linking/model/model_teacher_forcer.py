@@ -4,7 +4,8 @@ from linking.layers.gcn_encoders import GCNEncoder
 from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeRowClassifier, LinearEdgeClassifier
 from linking.data.data_util import to_one_hot, allowable_atoms, to_bond_valency, to_bond_index, to_atom, to_bond_length, \
-    calc_position, calc_angle, calc_dihedral, allowable_angles, allowable_dihedrals
+    calc_position, calc_angle, calc_dihedral, allowable_angles, allowable_dihedrals, encode_angle, encode_dihedral, \
+    to_angle, to_dihedral
 import numpy as np
 
 class TeacherForcer(torch.nn.Module):
@@ -16,9 +17,8 @@ class TeacherForcer(torch.nn.Module):
                  g: LinearEdgeSelector,
                  h: LinearEdgeRowClassifier,
                  sch: Sch,
-                 mlp_d,
-                 mlp_alpha,
-                 mlp_theta,
+                 mlp_alpha: LinearEdgeRowClassifier,
+                 mlp_theta: LinearEdgeRowClassifier,
                  config: Config,
                  device):
         super(TeacherForcer, self).__init__()
@@ -33,9 +33,8 @@ class TeacherForcer(torch.nn.Module):
 
         # coords
         self.sch = sch  # encoding
-        self.mlp_d = mlp_d  # distance
         self.mlp_alpha = mlp_alpha  # angle
-        self.mlp_theta = mlp_theta  # dehidral
+        self.mlp_theta = mlp_theta  # dihedral
 
         self.config = config
         self.device = device
@@ -108,12 +107,15 @@ class TeacherForcer(torch.nn.Module):
 
     def forward(self, data_pocket, data_ligand, generate=False, coords=False):
         # Initialise data variables -------------------------
-        x_p, edge_index_p, edge_wight_p = data_pocket.x, data_pocket.edge_index, data_pocket.edge_attr
-        x_l, edge_index_l, edge_weight_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, data_ligand.bfs_index.clone(), data_ligand.bfs_attr.clone()
+        x_p, edge_index_p, edge_attr_p = data_pocket.x, data_pocket.edge_index, data_pocket.edge_attr
+        x_l, edge_index_l, edge_attr_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, data_ligand.bfs_index.clone(), data_ligand.bfs_attr.clone()
         if coords:
-            x_pos_p = data_pocket.x[:, 1:4]
-            x_pos_l = data_ligand.x[:, 1:4]
+            x_pos_p = data_pocket.x[:, 1:4].detach()
+            x_pos_l = data_ligand.x[:, 1:4].detach()
             log_prob_coords = torch.tensor(0.0,  dtype=torch.float, device=self.device)
+            coord_v = torch.zeros_like(x_pos_l, dtype=torch.float, device=self.device)
+            coord_v[0 if generate else bfs_index[0][0]] = x_pos_l[0 if generate else bfs_index[0][0]]
+            coord_helper = CoordinateHelper()
 
         log_prob = torch.tensor(0.0,  dtype=torch.float, device=self.device)
 
@@ -154,22 +156,12 @@ class TeacherForcer(torch.nn.Module):
         adj = torch.zeros(lab_v.shape[0], lab_v.shape[0], device=self.device, dtype=torch.bool)
 
         # helper variables
-        valencies = torch.tensor([self.valency_map[to_atom(lab_v[i], self.device)] for i in range(lab_v.size()[0])], device=self.device)
+        valencies = torch.tensor([self.valency_map[to_atom(lab_v[i])] for i in range(lab_v.size()[0])], device=self.device)
         closed_mask = torch.zeros_like(valencies, device=self.device, dtype=torch.bool)
         time = torch.tensor(0, device=self.device)
 
         # non-tensor Queue, convert to queue
         Q = [torch.tensor(0, device=self.device) if generate else bfs_index[0][0]]  # first atom into queue
-
-        # ligand coordinates, the first one is placed at its position
-        # not used during training because we have the coords, and can compute internal coords
-        if coords:
-            coord_v = torch.zeros_like(x_l.size(), dtype=torch.float, device=self.device)
-            coord_v[0] = x_pos_l[0].copy()
-            fst_direction = (x_pos_l[bfs_index[0][1]] - x_pos_l[bfs_index[0][0]]).numpy()
-            fst_direction /= np.linalg.norm(fst_direction)
-            snd_direction = (x_pos_l[bfs_index[0][1]] - x_pos_l[bfs_index[0][0]]).numpy()
-            snd_direction /= np.linalg.norm(snd_direction)
 
         while len(Q) != 0:
             if not generate:
@@ -229,7 +221,7 @@ class TeacherForcer(torch.nn.Module):
                 p_att_uv = self.h(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_mask, adj), gumbel=generate)
             else:
                 # only mask
-                p_att_uv = self.h(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_mask, adj, unmask_bond=torch.tensor([to_bond_index(v_attr.unsqueeze(0), self.device)]))
+                p_att_uv = self.h(phi[v].unsqueeze(0), mask=self.calculate_bond_mask_row(valencies, u, v, closed_mask, adj, unmask_bond=torch.tensor([to_bond_index(v_attr.unsqueeze(0))]))
                                   , gumbel=generate)
             edge_type = p_att_uv
             if not generate:
@@ -240,7 +232,7 @@ class TeacherForcer(torch.nn.Module):
             edge_attr = torch.cat([edge_attr, edge_type.unsqueeze(0), edge_type.unsqueeze(0)])
 
             # update valencies
-            bond_valency = to_bond_valency(edge_type.unsqueeze(0), self.device)
+            bond_valency = to_bond_valency(edge_type.unsqueeze(0))
             valencies[int(u.item())] -= bond_valency
             valencies[int(v.item())] -= bond_valency
 
@@ -248,51 +240,42 @@ class TeacherForcer(torch.nn.Module):
             adj[u, v] = True
             adj[v, u] = True
 
+            lab_v = lab_v.detach()
+            edge_index = edge_index.detach()
             # compute z_graph = gnn(x_label, edge_index) of the graph
             z_v = self.g_dec(lab_v, edge_index)
             H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
 
             # once new edge added, compute its coordinates
             if coords:
+                # TODO only if v does not have a coord yet
                 # embedding of pocket + graph
-                pocket_graph_coords = torch.cat([coord_v, x_pos_p])
-                pocket_graph_features = torch.cat([torch.zeros(coord_v.size(0), device=self.device), torch.ones(x_pos_p.size(0), device=self.device)])
+                pocket_graph_coords = torch.cat([coord_v, x_pos_p]).detach()
+                pocket_graph_features = torch.cat([torch.zeros(coord_v.size(0), device=self.device, dtype=torch.long), torch.ones(x_pos_p.size(0), device=self.device, dtype=torch.long)]).detach()
                 C = self.sch(pocket_graph_features, pocket_graph_coords)
                 C_avg = torch.mean(C, dim=0)
 
-                phi_c_uv = torch.cat([C_avg, C[u], C[v], z_v[u], lab_v[u], z_v[v], lab_v[v], edge_type]).unsqueeze(0)
-                d = to_bond_length(lab_v[u], lab_v[v], edge_type, self.device)
+                phi_c_uv = torch.cat([C_avg, C[u], C[v], z_v[u].detach(), lab_v[u].detach(), z_v[v].detach(), lab_v[v].detach(), edge_type.detach()]).unsqueeze(0)
+                d = to_bond_length(lab_v[u], lab_v[v], edge_type)
                 pred_alpha = self.mlp_alpha(phi_c_uv, gumbel=generate)
                 pred_theta = self.mlp_theta(phi_c_uv, gumbel=generate)
+                pred_alpha_dec = to_angle(pred_alpha)
+                pred_theta_dec = to_dihedral(pred_theta)
 
-                if time == 0:
-                    # derive distance from first direction given by first bfs edge
-                    coord_v[v] = d*(coord_v[u].numpy() + fst_direction) if generate else x_pos_l[v]
-                    v1 = coord_v[v] - coord_v[u]
-                    v1 = v1.numpy()
-                elif time == 1:
-                    # derive distance from second direction given by first bfs edge
-                    coord_v[v] = d*(coord_v[u].numpy() + snd_direction) if generate else x_pos_l[v]
-                    v2 = coord_v[v] - coord_v[u]
-                    v2 = v2.numpy()
-                elif time == 2: # time >= 2
-                    coord_v[v] = calc_position(v1, v2, coord_v[u], d, pred_alpha, pred_theta) if generate else x_pos_l[v]
-                    v3 = coord_v[v] - coord_v[u]
-                    v3 = v3.numpy()
-                else:
-                    coord_v = calc_position(v2, v3, coord_v[u], d, pred_alpha, pred_theta) if generate else x_pos_l[v]
-                    v1 = v2, v2 = v3, v3 = coord_v[v] - coord_v[u]
-                    if not generate:
-                        true_alpha = to_one_hot(calc_angle(v2, v3), allowable_angles)
-                        true_theta = to_one_hot(calc_dihedral(v1, v2, v3), allowable_dihedrals)
-                        prob_alpha = torch.log(torch.dot(pred_alpha, true_alpha))
-                        prob_theta = torch.log(torch.dot(pred_theta, true_theta))
-                        log_prob_coords += prob_alpha + prob_theta
+                coord_v[v] = torch.tensor(coord_helper.next_coord(coord_v[u], d, pred_alpha_dec, pred_theta_dec), device=self.device) if generate else x_pos_l[v].clone().detach()
+                v3 = (coord_v[v] - coord_v[u]).detach()
+
+                if not generate:
+                    true_alpha = encode_angle(coord_helper.ground_truth_angle(v3), self.device)
+                    true_theta = encode_dihedral(coord_helper.grount_truth_dehidral(v3), self.device)
+                    prob_alpha = torch.log(torch.sum(pred_alpha*true_alpha))
+                    prob_theta = torch.log(torch.sum(pred_theta*true_theta))
+                    log_prob_coords += prob_alpha + prob_theta
+
+                coord_helper.add_vec(v3)
 
             time = time + torch.tensor(1, device=self.device)
-
-        # assert sum(adj.type(torch.FloatTensor).matmul(torch.ones(adj.shape[0]))) == edge_index.shape[1]
-        return (lab_v, edge_index, edge_attr) if generate else (log_prob + log_prob_coords if coords else log_prob)
+        return (lab_v, edge_index, edge_attr, coord_v if coords else lab_v, edge_index, edge_attr) if generate else (log_prob + log_prob_coords if coords else log_prob)
 
     def parameters(self):
        return [
@@ -305,39 +288,29 @@ class TeacherForcer(torch.nn.Module):
             dict(params=self.f.linear.parameters()),
             dict(params=self.g.linear.parameters()),
             dict(params=self.h.linear.parameters()),
+            dict(params=self.mlp_alpha.linear.parameters()),
+            dict(params=self.mlp_theta.linear.parameters()),
             dict(params=self.sch.sch_layer.parameters()),
        ]
 
 class CoordinateHelper:
-    def __init__(self, fst_direction, snd_direction, origin):
-        self.fst_direction = fst_direction.numpy()
-        self.fst_direction /= np.linalg.norm(self.fst_direction)
-        self.snd_direction = snd_direction.numpy()
-        self.snd_direction /= np.linalg.norm(self.snd_direction)
-        self.origin = origin.numpy()
-        self.v1 = np.zeros(3)
-        self.v2 = np.zeros(3)
-        self.v3 = np.zeros(3)
+    def __init__(self):
+        self.v1 = np.array([1., 0., 0.])
+        self.v2 = np.array([0., 1., 0.])
 
-    def add_vector(self, v):
+    def add_vec(self, v3: torch.Tensor):
+        v3 = v3.cpu().numpy()
         self.v1 = self.v2
-        self.v2 = self.v3
-        self.v3 = v.numpy()
+        self.v2 = v3 / np.linalg.norm(v3)
 
-    def get_coords(self, time, d, alpha, theta):
-        if time == 0:
-            r = self.origin + d.numpy()*self.fst_direction
-            self.add_vector(r-self.origin)
-        elif time == 1:
-            r = self.origin + self.v3 + d.numpy()*self.snd_direction
-            self.add_vector(r-self.v3)
-        elif time == 2:
-            r = calc_position(self.v2, self.v3, self.origin)
-        else:
-            r = calc_position(self.v1, self.v2, self.v3, )
+    def next_coord(self, p3, d, ang, dih):
+        return calc_position(self.v1, self.v2, p3.cpu().numpy(), d.cpu().numpy(), ang, dih)
 
-    def ground_truth_angle(self):
-        pass
+    def ground_truth_angle(self, v3: torch.Tensor):
+        return calc_angle(self.v2, v3.cpu().numpy())
+
+    def grount_truth_dehidral(self, v3: torch.Tensor):
+        return calc_dihedral(self.v1, self.v2, v3.cpu().numpy())
 
 
 

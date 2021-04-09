@@ -8,6 +8,9 @@ import torch
 import networkx as nx
 from torch_geometric.utils.convert import to_networkx
 
+from linking.data.data_util import to_atom
+
+
 def torchgeom_plot(graph):
     def to_atom(t):
         return ['C', 'F', 'N', 'Cl', 'O', 'I', 'P', 'Br', 'S', 'H', 'Stop'][
@@ -69,6 +72,56 @@ def networkx_plot_3D(G, angle):
     plt.show()
     return
 
+
+def pos_plot_3D(pos, edge_index, atoms, angle, save_name=None):
+    # Get node positions
+    pos = {
+        int(id): (node[0].item(), node[1].item(), node[2].item())
+        for id, node in enumerate(pos)
+    }
+
+    # 3D network plot
+    with plt.style.context(("ggplot")):
+
+        fig = plt.figure(figsize=(10, 7))
+        ax = Axes3D(fig)
+
+        # Loop on the pos dictionary to extract the x,y,z coordinates of each node
+        for key, value in pos.items():
+            if to_atom(atoms[key]) == 'H':
+                continue
+            xi = value[0]
+            yi = value[1]
+            zi = value[2]
+
+            # Scatter plot
+            ax.scatter(xi, yi, zi, c="r", s=20 + 20 * 1, edgecolors="k", alpha=0.7)
+
+        # Loop on the list of edges to get the x,y,z, coordinates of the connected nodes
+        # Those two points are the extrema of the line to be plotted
+        for e in range(len(edge_index[0])):
+            i = int(edge_index[0][e].item())
+            j = int(edge_index[1][e].item())
+            if to_atom(atoms[i]) == 'H' or to_atom(atoms[j]) == 'H':
+                continue
+            x = np.array((pos[i][0], pos[j][0]))
+            y = np.array((pos[i][1], pos[j][1]))
+            z = np.array((pos[i][2], pos[j][2]))
+
+            # Plot the connecting lines
+            ax.plot(x, y, z, c="black", alpha=0.5)
+
+    # Set the initial view
+    ax.view_init(30, angle)
+
+    # Hide the axes
+    ax.set_axis_off()
+
+    if not save_name is None:
+        plt.savefig(save_name)
+    else:
+        plt.show()
+    return
 
 def torchgeom_plot_3D(graph, angle):
     # Get node positions

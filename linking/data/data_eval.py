@@ -1,8 +1,11 @@
-import numpy as np
+import py3Dmol
 from rdkit import DataStructs, Chem
 from rdkit.Chem.Lipinski import NHOHCount, RingCount, NOCount, HeavyAtomCount
 from rdkit.Chem import rdDepictor, rdmolops, QED
 from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Geometry.rdGeometry import Point3D
+from rdkit.Chem import PyMol
+
 from linking.data.data_util import to_bond_index, to_atom
 
 def mol_to_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True):
@@ -17,18 +20,59 @@ def mol_to_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True):
             Chem.SanitizeMol(mc)
         except:
             mc = Chem.Mol(mol.ToBinary())
-    if not mc.GetNumConformers():
-        rdDepictor.Compute2DCoords(mc)
+    # if not mc.GetNumConformers():
+    rdDepictor.Compute2DCoords(mc)
     drawer = rdMolDraw2D.MolDraw2DSVG(molSize[0], molSize[1])
     drawer.DrawMolecule(mc)
     drawer.FinishDrawing()
     svg = drawer.GetDrawingText()
     return svg.replace('svg:', '')
 
+
+def mol_to_3d_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True, viewer: PyMol.MolViewer=None, pocket_file: str= None):
+    mc = Chem.Mol(mol.ToBinary())
+    if kekulize:
+        try:
+            Chem.Kekulize(mc)
+        except:
+            mc = Chem.Mol(mol.ToBinary())
+    if sanitize:
+        try:
+            Chem.SanitizeMol(mc)
+        except:
+            mc = Chem.Mol(mol.ToBinary())
+
+    # for starting pymol from here
+    # import subprocess
+    # cmd = subprocess.Popen(['pymol', '-cKRQ'])
+
+    viewer.DeleteAll()
+    viewer.ShowMol(mc, confId=0, name='ligand', showOnly=False)
+    if not pocket_file is None:
+        viewer.LoadFile(pocket_file, 'protein')
+        viewer.SetDisplayStyle('protein', 'surface')
+    viewer.Zoom('protein')
+    viewer.server.do('color white, protein')
+    # viewer.server.do('turn x, 180')
+    png = viewer.GetPNG()
+    return png
+
+    '''
+    Only works in jupyter
+    view = py3Dmol.view(width=molSize[0], height=molSize[1])
+    mb = Chem.MolToMolBlock(mol, confId=0)
+    view.addModel(mb, 'sdf')
+    view.zoomTo()
+    view.show()
+    return view.png()
+    '''
+
+
 def to_rdkit(data, device=None):
+    has_pos = hasattr(data, 'pos') and (not data.pos is None)
     node_list = []
     for i in range(data.x.size()[0]):
-        node_list.append(to_atom(data.x[i], device=device))
+        node_list.append(to_atom(data.x[i]))
 
     # create empty editable mol object
     mol = Chem.RWMol()
@@ -47,7 +91,7 @@ def to_rdkit(data, device=None):
     for i in range(0, data.edge_index.size()[1]):
         ix = data.edge_index[0][i].item()
         iy = data.edge_index[1][i].item()
-        bond = to_bond_index(data.edge_attr[i], device=device)
+        bond = to_bond_index(data.edge_attr[i])
         # add bonds between adjacent atoms
         if (str((ix, iy)) in added_bonds) or (str((iy, ix)) in added_bonds) or (iy in invalid_idx or ix in invalid_idx):
             continue
@@ -69,11 +113,20 @@ def to_rdkit(data, device=None):
 
         added_bonds.add(str((ix, iy)))
 
+    if has_pos:
+        conf = Chem.Conformer(mol.GetNumAtoms())
+        for i in range(data.pos.size(0)):
+            if i in invalid_idx:
+                continue
+            p = Point3D(data.pos[i][0].item(), data.pos[i][1].item(), data.pos[i][2].item())
+            conf.SetAtomPosition(node_to_idx[i], p)
+        conf.SetId(0)
+        mol.AddConformer(conf)
+
     # Convert RWMol to Mol object
     mol = mol.GetMol()
     mol_frags = rdmolops.GetMolFrags(mol, asMols=True, sanitizeFrags=False)
     largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
-
     return largest_mol
 
 def tanimoto(vec_a, vec_b):

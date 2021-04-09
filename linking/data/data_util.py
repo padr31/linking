@@ -41,8 +41,8 @@ pocket_bond_to_one_hot = {
 
 empty_bond = [0., 0., 0., 0.]
 
-allowable_angles = [120, 109, 60]
-allowable_dihedrals = [180, 120, 60, 0]
+allowable_angles = [179, 120, 109, 60, 1]
+allowable_dihedrals = [180, 120, 60, 0, -60, -120, -180]
 
 def split_multi_mol2_file(path, dir_name):
     delimiter = '@<TRIPOS>MOLECULE'
@@ -343,29 +343,46 @@ def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
 
     return geom_graph
 
-def to_atom(t, device=None):
-    return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=device)).item())]
+def to_atom(t):
+    return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=t.device)).item())]
 
-def to_bond_valency(t, device=None):
+def to_bond_valency(t):
     t_s = t.squeeze()
-    return [1, 2, 3, 2][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=device)).item())]
+    return [1, 2, 3, 2][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=t.device)).item())]
 
-def to_bond_index(t, device=None):
+def to_bond_index(t):
     t_s = t.squeeze()
-    return [1, 2, 3, 4][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=device)).item())]
+    return [1, 2, 3, 4][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=t.device)).item())]
 
-def to_bond_symbol(t, device=None):
-    return ['-', '=', ':=:', '..'][to_bond_index(t, device) - 1]
+def to_bond_symbol(t):
+    return ['-', '=', ':=:', '..'][to_bond_index(t) - 1]
 
-def to_bond_length(a1, a2, bond, device=None):
-    key = to_atom(a1, device) + to_bond_symbol(bond, device) + to_atom(a2, device)
+def to_bond_length(a1, a2, bond):
+    key = to_atom(a1) + to_bond_symbol(bond) + to_atom(a2)
     x = allowable_bond_lengths[key] if key in allowable_bond_lengths else allowable_bond_lengths['arbitrary']
-    return torch.tensor(x, device=device)
+    return torch.tensor(x, device=a1.device)
+
+def to_angle(t):
+    return allowable_angles[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=t.device)).item())]
+
+def to_dihedral(t):
+    return allowable_dihedrals[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=t.device)).item())]
+
+def closest(a, arr):
+    return min(arr, key=lambda x: abs(x - a))
+
+def encode_angle(angle, device=None):
+    discretised_angle = closest(180*angle/np.pi, allowable_angles)
+    return torch.tensor(to_one_hot(discretised_angle, allowable_angles), device=device, dtype=torch.float)
+
+def encode_dihedral(dihedral, device=None):
+    discretised_dihedral = closest(180*dihedral/np.pi, allowable_dihedrals)
+    return torch.tensor(to_one_hot(discretised_dihedral, allowable_dihedrals), device=device, dtype=torch.float)
 
 def calc_angle(v2, v3):
-    uvec1 = v2 / np.linalg.norm(v2)
-    uvec2 = v3 / np.linalg.norm(v3)
-    return np.arccos(np.dot(uvec1, uvec2))
+    sin_theta = np.linalg.norm(np.cross(v2, v3))
+    cos_theta = np.dot(v2, v3)
+    return np.arctan2(sin_theta, cos_theta)
 
 def calc_dihedral(v1, v2, v3):
     """
@@ -418,7 +435,6 @@ def calc_position(v1, v2, p3, dst, ang, dih):
     position = p3 + dst * v3
 
     return position
-
 
 def get_angle(v2, v3) -> float:
     """

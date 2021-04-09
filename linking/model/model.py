@@ -3,7 +3,7 @@ import torch
 from linking.config.config import Config
 from linking.data.data_util import to_one_hot
 from linking.layers.gcn_encoders import GCNEncoder
-from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeClassifier, LinearScorePredictor
+from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeClassifier, MLP
 from linking.data.torchgeom_pdb_loader import allowable_atoms
 
 class MoleculeGenerator(torch.nn.Module):
@@ -280,7 +280,7 @@ class MoleculeGenerator(torch.nn.Module):
         ]
 
 class SimpleModel(torch.nn.Module):
-    def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, score_predictor: LinearScorePredictor):
+    def __init__(self, pocket_encoder: GCNEncoder, ligand_encoder: GCNEncoder, score_predictor: MLP):
         super(SimpleModel, self).__init__()
         self.pocket_encoder = pocket_encoder
         self.ligand_encoder = ligand_encoder

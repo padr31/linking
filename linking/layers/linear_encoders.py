@@ -104,12 +104,16 @@ class LinearEdgeClassifier(torch.nn.Module):
             x = F.softmax(x, dim=1)
         return x
 
-class LinearScorePredictor(torch.nn.Module):
-    def __init__(self, in_channels: int) -> None:
-        super(LinearScorePredictor, self).__init__()
-        self.linear = torch.nn.Linear(in_channels, 1)
+class MLP(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, hidden_layers: int) -> None:
+        super(MLP, self).__init__()
+        self.l1 = torch.nn.Linear(in_channels, in_channels*2)
+        self.l2 = torch.nn.Linear(in_channels*2, in_channels*2)
+        self.l3 = torch.nn.Linear(in_channels*2, out_channels)
+        self.hidden_layers = hidden_layers
 
     def forward(self, x):
-        x = self.linear(x)
-        x = F.relu(x)
-        return x
+        x = self.l1(x).relu().softmax(dim=0)
+        for i in range(self.hidden_layers):
+            x = self.l2(x).relu()
+        return self.l3(x)

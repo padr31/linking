@@ -6,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
-from linking.data.data_util import parse_mol2_bonds, to_atom, to_bond_index, calc_angle, calc_dihedral, calc_position, calc_dihedral_2, get_dihedral, get_angle, position_point
+from linking.data.data_util import parse_mol2_bonds, to_atom, to_bond_index, calc_angle, calc_dihedral, calc_position
 from linking.data.torchgeom_pdb_loader import PDBLigandDataset
 import matplotlib.pyplot as plt
 
@@ -161,8 +161,8 @@ def getAngleTypes():
                 dihedral_base_vec = edge_vec(Q[queue_length-3])
                 dih = calc_dihedral(dihedral_base_vec, base_vec, vec)
 
-                p3 = data.x[Q[queue_length-1][0]][1:4].numpy()
-                p4 = data.x[Q[queue_length-1][1]][1:4].numpy()
+                p3 = data.x[Q[queue_length-1][0]][1:4].cpu().numpy()
+                p4 = data.x[Q[queue_length-1][1]][1:4].cpu().numpy()
                 new_pos = calc_position(dihedral_base_vec, base_vec, p3, np.linalg.norm(p4-p3), angle, dih)
                 assert np.linalg.norm(p4 - new_pos) < 0.01
                 dyhedral = (dih / np.pi) * 180

@@ -6,6 +6,8 @@ from linking.model.build_model import build_model
 from linking.training.trainer import Trainer
 import os
 
+from linking.training.trainer_qed import QEDTrainer
+
 if __name__ == "__main__":
     # Parse command line args
     parser = argparse.ArgumentParser()
@@ -39,7 +41,10 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
     # Create Trainer
-    trainer = Trainer(model=model, data=data, optimizer=optimizer, config=config)
+    if config.model == "TeacherForcer":
+        trainer = Trainer(model=model, data=data, optimizer=optimizer, config=config)
+    elif config.model == "QED":
+        trainer = QEDTrainer(model=model, data=data, optimizer=optimizer, config=config)
 
     # Train
     trainer.train()
