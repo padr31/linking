@@ -41,7 +41,7 @@ pocket_bond_to_one_hot = {
 
 empty_bond = [0., 0., 0., 0.]
 
-allowable_angles = [179, 120, 109, 60]
+allowable_angles = [71, 60, 0]
 allowable_dihedrals = [180, 120, 60, 0, -60, -120, -180]
 
 def split_multi_mol2_file(path, dir_name):
@@ -417,6 +417,8 @@ def calc_position(v1, v2, p3, dst, ang, dih):
     """
     # Normal vector of plane containing v1,v2
     n1 = np.cross(v1, v2)
+    if np.linalg.norm(n1) == 0:
+        print('null')
     n1 = n1 / np.linalg.norm(n1)
 
     # un1, ub2, and um1 form orthonormal frame
@@ -425,6 +427,8 @@ def calc_position(v1, v2, p3, dst, ang, dih):
     m1 = m1 / np.linalg.norm(m1)
 
     n2 = np.cos(dih)*n1 + np.sin(dih)*m1
+    if np.linalg.norm(n2) == 0.0:
+        print('null')
     n2 = n2 / np.linalg.norm(n2)
 
     nn2 = np.cross(n2, uv2)

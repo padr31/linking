@@ -48,9 +48,9 @@ def mol_to_3d_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True, viewer:
 
     viewer.DeleteAll()
     viewer.ShowMol(mc, confId=0, name='ligand', showOnly=False)
-    if not pocket_file is None:
-        viewer.LoadFile(pocket_file, 'protein')
-        viewer.SetDisplayStyle('protein', 'surface')
+    #if not pocket_file is None:
+    #    viewer.LoadFile(pocket_file, 'protein')
+    #    viewer.SetDisplayStyle('protein', 'surface')
     viewer.Zoom('protein')
     viewer.server.do('color white, protein')
     # viewer.server.do('turn x, 180')

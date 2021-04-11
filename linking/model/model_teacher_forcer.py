@@ -5,7 +5,7 @@ from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeRowClassifier, LinearEdgeClassifier
 from linking.data.data_util import to_one_hot, allowable_atoms, to_bond_valency, to_bond_index, to_atom, to_bond_length, \
     calc_position, calc_angle, calc_dihedral, allowable_angles, allowable_dihedrals, encode_angle, encode_dihedral, \
-    to_angle, to_dihedral
+    to_angle, to_dihedral, calc_angle_p, calc_position_p, calc_dihedral_p
 import numpy as np
 
 class TeacherForcer(torch.nn.Module):
@@ -116,6 +116,7 @@ class TeacherForcer(torch.nn.Module):
             coord_v = torch.zeros_like(x_pos_l, dtype=torch.float, device=self.device)
             coord_v[0 if generate else bfs_index[0][0]] = x_pos_l[0 if generate else bfs_index[0][0]]
             coord_helper = CoordinateHelper()
+            coord_helper.add_point(torch.tensor(0, device=self.device) if generate else bfs_index[0][0], x_pos_l[0 if generate else bfs_index[0][0]])
 
         log_prob = torch.tensor(0.0,  dtype=torch.float, device=self.device)
 
@@ -247,7 +248,7 @@ class TeacherForcer(torch.nn.Module):
             H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
 
             # once new edge added, compute its coordinates
-            if coords:
+            if coords and not coord_helper.contains(v):
                 # TODO only if v does not have a coord yet
                 # embedding of pocket + graph
                 pocket_graph_coords = torch.cat([coord_v, x_pos_p]).detach()
@@ -262,17 +263,18 @@ class TeacherForcer(torch.nn.Module):
                 pred_alpha_dec = to_angle(pred_alpha)
                 pred_theta_dec = to_dihedral(pred_theta)
 
-                coord_v[v] = torch.tensor(coord_helper.next_coord(coord_v[u], d, pred_alpha_dec, pred_theta_dec), device=self.device) if generate else x_pos_l[v].clone().detach()
-                v3 = (coord_v[v] - coord_v[u]).detach()
-
                 if not generate:
-                    true_alpha = encode_angle(coord_helper.ground_truth_angle(v3), self.device)
-                    true_theta = encode_dihedral(coord_helper.grount_truth_dehidral(v3), self.device)
+                    v_pos = x_pos_l[v].clone().detach()
+                    true_alpha = encode_angle(coord_helper.ground_truth_angle(coord_v[u].clone().detach(), v_pos), self.device)
+                    true_theta = encode_dihedral(coord_helper.ground_truth_dihedral(coord_v[u].clone().detach(), v_pos), self.device)
                     prob_alpha = torch.log(torch.sum(pred_alpha*true_alpha))
                     prob_theta = torch.log(torch.sum(pred_theta*true_theta))
                     log_prob_coords += prob_alpha + prob_theta
 
-                coord_helper.add_vec(v3)
+                coord_v[v] = torch.tensor(coord_helper.next_coord(coord_v[u], d, (pred_alpha_dec / 180) * np.pi,
+                                                                  (pred_theta_dec / 180) * np.pi),
+                                          device=self.device) if generate else x_pos_l[v].clone().detach()
+                coord_helper.add_point(v, coord_v[v].clone().detach())
 
             time = time + torch.tensor(1, device=self.device)
         return (lab_v, edge_index, edge_attr, coord_v if coords else lab_v, edge_index, edge_attr) if generate else (log_prob + log_prob_coords if coords else log_prob)
@@ -293,7 +295,7 @@ class TeacherForcer(torch.nn.Module):
             dict(params=self.sch.sch_layer.parameters()),
        ]
 
-class CoordinateHelper:
+class VecHelper:
     def __init__(self):
         self.v1 = np.array([1., 0., 0.])
         self.v2 = np.array([0., 1., 0.])
@@ -309,8 +311,40 @@ class CoordinateHelper:
     def ground_truth_angle(self, v3: torch.Tensor):
         return calc_angle(self.v2, v3.cpu().numpy())
 
-    def grount_truth_dehidral(self, v3: torch.Tensor):
+    def ground_truth_dihedral(self, v3: torch.Tensor):
         return calc_dihedral(self.v1, self.v2, v3.cpu().numpy())
 
+class CoordinateHelper:
+    def __init__(self):
+        self.p1_aux = np.array([1., 0., 0.])
+        self.p2_aux = np.array([0., 1., 0.])
+        self.coords = {}
 
+    def add_point(self, i: torch.Tensor, p: torch.Tensor):
+        self.coords[str(i.cpu().numpy())] = p.cpu().numpy()
 
+    def contains(self, i: torch.Tensor):
+        return str(i.cpu().numpy()) in self.coords
+
+    def min_dist_points(self, p: torch.Tensor):
+        p = p.cpu().numpy()
+        sorted_coords = [v for k, v in sorted(self.coords.items(), key=lambda item: np.linalg.norm(item[1] - p))]
+        num_coords = len(sorted_coords)
+        if num_coords == 0 or num_coords == 1:  # if there is only one coord, then it is the origin
+            return p+self.p1_aux, p+self.p2_aux
+        elif len(sorted_coords) == 2:
+            return self.p1_aux + self.p2_aux + sorted_coords[1] + p, sorted_coords[1]
+        else:
+            return sorted_coords[2], sorted_coords[1]
+
+    def next_coord(self, p3: torch.Tensor, d: torch.Tensor, ang: int, dih: int):
+        p1, p2 = self.min_dist_points(p3)
+        return calc_position_p(p1, p2, p3.cpu().numpy(), d.cpu().numpy(), ang, dih)
+
+    def ground_truth_angle(self, p3: torch.Tensor, p4: torch.Tensor):
+        p1, p2 = self.min_dist_points(p3)
+        return calc_angle_p(p2, p3.cpu().numpy(), p4.cpu().numpy())
+
+    def ground_truth_dihedral(self, p3: torch.Tensor, p4: torch.Tensor):
+        p1, p2 = self.min_dist_points(p3)
+        return calc_dihedral_p(p1, p2, p3.cpu().numpy(), p4.cpu().numpy())

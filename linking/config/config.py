@@ -11,21 +11,21 @@ class Config(BaseModel):
     logdir: str = "./out_logdir/"
     logdir_qed: str = "./out_logdir_qed/"
     num_epochs: int = 20
-    learning_rate: float = 0.01  # 0.003 best
+    learning_rate: float = 0.003  # 0.003 best
 
     # Data stuff
     train_test_ratio: int = 10
-    num_train: int = 4096
-    eval_data: list = [0, 1, 2, 3, 4, 5]
-    num_eval_generate: int = 50
+    num_train: int = 16
+    eval_data: list = [0]
+    num_eval_generate: int = 20
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    coords: bool = False
-    batch_size: int = 16
+    coords: bool = True
+    batch_size: int = 4
     num_allowable_atoms = 11
     num_allowable_bonds = 4
-    num_allowable_angles = 4
+    num_allowable_angles = 3
     num_allowable_dihedrals = 7
 
     pocket_encoder_in_channels: int = num_allowable_atoms+4
