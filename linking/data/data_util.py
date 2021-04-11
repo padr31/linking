@@ -41,7 +41,7 @@ pocket_bond_to_one_hot = {
 
 empty_bond = [0., 0., 0., 0.]
 
-allowable_angles = [179, 120, 109, 60, 1]
+allowable_angles = [179, 120, 109, 60]
 allowable_dihedrals = [180, 120, 60, 0, -60, -120, -180]
 
 def split_multi_mol2_file(path, dir_name):
@@ -127,7 +127,7 @@ def bfs(geom_graph):
             nx.draw_networkx(G, nodelist=n_list, pos=l)
             plt.show()
     '''
-    bfs_edges = list(nx.bfs_edges(G, 0))
+    bfs_edges = list(nx.edge_bfs(G, 0))
 
     # build attribute map
     attrib_map = {}
@@ -436,85 +436,18 @@ def calc_position(v1, v2, p3, dst, ang, dih):
 
     return position
 
-def get_angle(v2, v3) -> float:
-    """
-    From Simm. et. al.
-    Compute angle between points i, j, and k
-    :param p_i: point i
-    :param p_j: point j
-    :param p_k: point k
-    :return: angle in radians
-    """
-    rij = v3
-    rkj = -v2
+'''
+The following functions use the representation v1 = p2-p1, v2 = p3-p2, v3 = p4-p3
+'''
+def calc_angle_p(p2, p3, p4):
+    return calc_angle(p3-p2, p4-p3)
 
-    sin_theta = np.linalg.norm(np.cross(rij, rkj))
-    cos_theta = np.dot(rij, rkj)
-    return np.arctan2(sin_theta, cos_theta)
+def calc_dihedral_p(p1, p2, p3, p4):
+    return calc_dihedral(p2-p1, p3-p2, p4-p3)
 
-def get_dihedral(v1, v2, v3) -> float:
-    """
-    From Simm. et. al.
-    Return dihedral between points i, j, k, and l.
-    :param p_i: point i
-    :param p_j: point j
-    :param p_k: point k
-    :param p_l: point l
-    :return: dihedral angle in radians
-    """
-    r_ji = -v3
-    r_kj = -v2
-    r_lk = -v1
+def calc_position_p(p1, p2, p3, dst, ang, dih):
+    return calc_position(p2-p1, p3-p2, p3, dst, ang, dih)
 
-    v1 = np.cross(r_ji, r_kj)
-    v1 = v1 / np.linalg.norm(v1)
-
-    v2 = np.cross(r_lk, r_kj)
-    v2 = v2 / np.linalg.norm(v2)
-
-    m1 = np.cross(v1, r_kj) / np.linalg.norm(r_kj)
-
-    x = np.dot(v1, v2)
-    y = np.dot(m1, v2)
-
-    psi = np.arctan2(y, x)
-    if psi < 0:
-        return -psi - np.pi
-    else:
-        return np.pi - psi
-
-
-def position_point(v1: np.ndarray, v2: np.ndarray, p3: np.ndarray, distance: float, angle: float,
-                   dihedral: float) -> np.ndarray:
-    """
-    From Simm. et. al.
-    Determine point p in space that is:
-        - <distance> far from p2
-        - <angle> between p2 and p1
-        - <dihedral> between p2, p1, and p0
-    :param p0: position for dihedral
-    :param p1: position for angle
-    :param p2: position for distance
-    :param distance: distance between p and v2
-    :param angle: angle between p, p2 and p1
-    :param dihedral: dihedral angle between p, p2, p1, and p0
-    :return: coordinates of p
-    """
-    x = distance * np.cos(angle)
-    y = distance * np.cos(dihedral) * np.sin(angle)
-    z = distance * np.sin(dihedral) * np.sin(angle)
-
-    v_a = v1
-
-    v_b = v2
-    v_b = v_b / np.linalg.norm(v_b)
-
-    c_ab = np.cross(v_a, v_b)
-    c_ab = c_ab / np.linalg.norm(c_ab)
-
-    c_ab_b = np.cross(c_ab, v_b)
-
-    return p3 - v_b * x + c_ab_b * y + c_ab * z
 
 allowable_bond_lengths = {
 "C-N":1.4107755,

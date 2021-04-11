@@ -6,7 +6,8 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import numpy as np
-from linking.data.data_util import parse_mol2_bonds, to_atom, to_bond_index, calc_angle, calc_dihedral, calc_position
+from linking.data.data_util import parse_mol2_bonds, to_atom, to_bond_index, calc_angle, calc_dihedral, calc_position, \
+    calc_angle_p, calc_dihedral_p
 from linking.data.torchgeom_pdb_loader import PDBLigandDataset
 import matplotlib.pyplot as plt
 
@@ -109,18 +110,6 @@ import math
 def getAngleTypes():
     d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
 
-    def vec_angle(vec1, vec2):
-        """ Returns the absolute cosine angle in degrees between vectors 'vec1' and 'vec2' """
-        angle = np.arccos(vec1.dot(vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
-        return angle
-
-    def signed_vec_angle(vec1, vec2):
-        """ Returns the signed angle in degrees between vectors 'vec1' and 'vec2' """
-        normal = np.array((0, 0, 1))  # normal to xy plane
-        angle = np.arccos(vec1.dot(vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
-        cross = np.cross(vec1, vec2)
-        return angle if np.dot(normal, cross) > 0 else -angle
-
     Q = []    # returns true if new things were added, i.e. we have new angles to calculate
     def qpush(edge):
         if (edge[0] == -1 or edge[1] == -1): # stop edge
@@ -190,6 +179,59 @@ def getAngleTypes():
     print('Nan count:')
     print(nan_count)
 
+def getPointAngleTypes():
+    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
+
+    angles = {'0': 0}
+    dihedrals = {'0': 0}
+    nan_count = 0
+
+    def min_dist_points(p, coords):
+        sorted_c = sorted(enumerate(coords), key=lambda t: np.linalg.norm(p-t[1]))
+        return coords[sorted_c[2][0]], coords[sorted_c[1][0]]
+
+    for data in d:
+        coords = np.ones((data.x.size(0), 3))
+        coords[data.bfs_index[0][0]] = data.x[data.bfs_index[0][0], 1:4]
+        print("Pocessing " + str(data.name))
+        for i in range(0, len(data.bfs_index)):
+            from_i = data.bfs_index[i][0]
+            to_i = data.bfs_index[i][1]
+            if to_i == -1:
+                continue
+            to_c = data.x[to_i, 1:4]
+            if np.linalg.norm(coords[to_i]-to_c.numpy()) == 0.0:
+                print('exists')
+                continue
+            min_dist_p = min_dist_points(coords[from_i], coords)
+            angle = (calc_angle_p(min_dist_p[1], coords[from_i], to_c)/np.pi)*180
+            dihedral = (calc_dihedral_p(min_dist_p[0], min_dist_p[1], coords[from_i], to_c)/np.pi)*180
+            coords[to_i] = to_c
+            if str(angle // 1) in angles:
+                angles[str(angle//1)] += 1
+            else:
+                angles[str(angle//1)] = 0
+            if math.isnan(dihedral):
+                print('none')
+            if str(dihedral // 1) in dihedrals:
+                dihedrals[str(dihedral // 1)] += 1
+            else:
+                dihedrals[str(dihedral // 1)] = 0
+
+    for dic in [angles, dihedrals]:
+        dic = {k: v for k, v in dic.items() if v > 1000}
+        sorted_tupples = sorted([(k, v) for k, v in dic.items()], key=lambda e: e[1])
+        x = [e[0] for e in sorted_tupples]
+        y = [e[1] for e in sorted_tupples]
+        plt.bar(x, y, color='g', width=1)
+        plt.xticks(rotation=-90)
+        plt.show()
+
+    print("Set of angle types:")
+    print(angles)
+    print("Set of dyhedral angle types:")
+    print(dihedrals)
+
 def getDistanceTypes():
     d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
 
@@ -222,4 +264,4 @@ def getDistanceTypes():
         print('"' + key + '":' + str(np.mean(arr)) + ",")
         # print(key + " num: " + str(len(arr)) + ", mean-length: " + str(np.mean(arr)) + ", std: " + str(np.std(arr)))
     print("}")
-getAngleTypes()
+getPointAngleTypes()

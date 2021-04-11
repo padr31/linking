@@ -38,7 +38,7 @@ class TeacherForcer(torch.nn.Module):
 
         self.config = config
         self.device = device
-        self.valency_map = {'C': 4, 'F': 1, 'N': 3, 'Cl': 1, 'O': 2, 'I': 1, 'P': 5, 'Br': 1, 'S': 6, 'H': 1, 'Stop': 1000}
+        self.valency_map = {'C': 4, 'F': 1, 'N': 3, 'Cl': 1, 'O': 2, 'I': 1, 'P': 5, 'Br': 1, 'S': 2, 'H': 1, 'Stop': 1000}
 
     def calculate_node_mask_list(self, valencies, u, closed_mask, adj, unmask=None):
         #  mask for node u --> v

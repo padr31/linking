@@ -31,7 +31,8 @@ class Trainer:
         for a in config.eval_data:
             self.writers[str(a)] = SummaryWriter(logdir + "/" + str(a))
 
-        self.viewer = PyMol.MolViewer()
+        if self.config.coords:
+            self.viewer = PyMol.MolViewer()
 
 
     def training_epoch(self, epoch) -> float:
@@ -133,9 +134,13 @@ class Trainer:
                     qed_score_count_items += 1
 
                 generated_ligand_svg = mol_to_svg(generated_ligand_mol)
+
                 if self.config.coords:
                      generated_ligand_png = mol_to_3d_svg(generated_ligand_mol, viewer=self.viewer, pocket_file=x_pocket.name)
-                     generated_ligand_png.save("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + "_3D.png")
+                     try:
+                        generated_ligand_png.save("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + "_3D.png")
+                     except:
+                         print('error saving png from pymol')
                 with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
                     svg_file.write(generated_ligand_svg)
                 #with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".png", "w") as png:
