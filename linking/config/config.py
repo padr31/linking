@@ -10,19 +10,19 @@ class Config(BaseModel):
     save_model: str = "./out_model/"
     logdir: str = "./out_logdir/"
     logdir_qed: str = "./out_logdir_qed/"
-    num_epochs: int = 20
-    learning_rate: float = 0.003  # 0.003 best
+    num_epochs: int = 50
+    learning_rate: float = 0.01  # 0.003 best
 
     # Data stuff
     train_test_ratio: int = 10
-    num_train: int = 16
+    num_train: int = 4096
     eval_data: list = [0]
     num_eval_generate: int = 20
 
     # Model stuff
-    model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
-    coords: bool = True
-    batch_size: int = 4
+    model: str = "QED"  # "MoleculeGenerator" # "SimpleModel"
+    coords: bool = False
+    batch_size: int = 16
     num_allowable_atoms = 11
     num_allowable_bonds = 4
     num_allowable_angles = 3

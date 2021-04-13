@@ -113,7 +113,7 @@ class MLP(torch.nn.Module):
         self.hidden_layers = hidden_layers
 
     def forward(self, x):
-        x = self.l1(x).relu().softmax(dim=0)
+        x = self.l1(x).relu()
         for i in range(self.hidden_layers):
             x = self.l2(x).relu()
         return self.l3(x)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Dict
 import torch
+from torch.distributions import Normal
 from tqdm import tqdm
 from torch_geometric.data import Data
 from linking.config.config import Config
@@ -59,10 +60,10 @@ class QEDTrainer:
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
 
-            prediction, mu, log_var = self.model(x_pocket, x_ligand)
-            log_var = torch.clip(log_var, -10, 10)
-            KL = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), 0)
-            loss_f = torch.nn.L1Loss()
+            prediction, mu, log_var, q = self.model(x_pocket, x_ligand)
+            KL = torch.distributions.kl_divergence(Normal(torch.zeros_like(mu), torch.ones_like(log_var)), q).mean()
+            #KL = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), 0)
+            loss_f = torch.nn.MSELoss()
             loss_normal = loss_f(prediction, self.Y_qed[x_ligand.name])
             loss = loss_normal + KL
             loss.backward()

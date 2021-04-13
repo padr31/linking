@@ -64,7 +64,7 @@ class VariationalGATEncoder(torch.nn.Module):
         x = self.conv1(x, edge_index).relu()
         for i in range(self.hidden_layers):
             x = self.conv2(x, edge_index).relu()
-        return torch.sum(self.conv_mu(x, edge_index).softmax(dim=1), dim=0), torch.sum(self.conv_log_var(x, edge_index).softmax(dim=1), dim=0)
+        return torch.sum(self.conv_mu(x, edge_index), dim=0), torch.sum(self.conv_log_var(x, edge_index), dim=0)
 
 class GCNEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int):

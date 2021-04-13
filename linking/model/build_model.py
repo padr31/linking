@@ -64,11 +64,10 @@ def build_qed_model(config: Config, device) -> nn.Module:
     #    in_channels=config.ligand_encoder_in_channels, out_channels=config.ligand_encoder_out_channels, edge_dim=config.num_allowable_bonds)
     ligand_encoder = VariationalGATEncoder(in_channels=config.ligand_encoder_in_channels, out_channels=config.ligand_encoder_out_channels, hidden_layers=6)
     mlp = MLP(in_channels=config.ligand_encoder_out_channels, out_channels=1, hidden_layers=0)
-    sch = Sch(config.sch_net_hidden_channels)
+    # sch = Sch(config.sch_net_hidden_channels)
 
     model = QED(
         ligand_encoder,
-        sch,
         mlp,
         config, device)
     return model
