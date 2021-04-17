@@ -2,8 +2,8 @@ import os
 import pandas as pd
 import torch
 from torch_geometric.data import InMemoryDataset
-from linking.data.data_util import pdb_file_to_torch_geometric, mol2_file_to_torch_geometric, allowable_atoms, \
-    ligand_bond_to_one_hot, pocket_bond_to_one_hot
+from linking.data.data_util import pdb_file_to_torch_geometric, mol2_file_to_torch_geometric
+from linking.util.encoding import allowable_atoms, ligand_bond_to_one_hot, pocket_bond_to_one_hot
 
 bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
 pd.set_option("display.max_columns", None)

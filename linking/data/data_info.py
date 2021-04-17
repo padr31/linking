@@ -1,30 +1,14 @@
 # Getting information about the type of data we are dealing with
-
 from rdkit.Chem import rdmolops
-import os
 from rdkit import Chem
-from rdkit.Chem import rdDepictor
-from rdkit.Chem.Draw import rdMolDraw2D
-import numpy as np
-from linking.data.data_util import parse_mol2_bonds, to_atom, to_bond_index, calc_angle, calc_dihedral, calc_position, \
-    calc_angle_p, calc_dihedral_p
+from linking.data.data_util import parse_mol2_bonds
+from linking.util.encoding import to_atom, to_bond_index
+from linking.util.coords import calc_angle, calc_dihedral, calc_position, calc_angle_p, calc_dihedral_p
 from linking.data.torchgeom_pdb_loader import PDBLigandDataset
+import os
+import math
+import numpy as np
 import matplotlib.pyplot as plt
-
-def moltosvg(mol, molSize = (300,300), kekulize = True):
-    mc = Chem.Mol(mol.ToBinary())
-    if kekulize:
-        try:
-            Chem.Kekulize(mc)
-        except:
-            mc = Chem.Mol(mol.ToBinary())
-    if not mc.GetNumConformers():
-        rdDepictor.Compute2DCoords(mc)
-    drawer = rdMolDraw2D.MolDraw2DSVG(molSize[0],molSize[1])
-    drawer.DrawMolecule(mc)
-    drawer.FinishDrawing()
-    svg = drawer.GetDrawingText()
-    return svg.replace('svg:','')
 
 def mol_with_atom_index(mol):
     for atom in mol.GetAtoms():
@@ -36,12 +20,6 @@ def get_components(mol):
     largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
     return len(mol_frags), len(largest_mol.GetAtoms())
 
-#mol = Chem.MolFromPDBFile("/Users/padr/repos/linking/datasets/raw/refined-set/1a1e/1a1e_pocket.pdb")
-#SVG(moltosvg(mol))
-
-#graph = mol_to_complete_graph(mol, explicit_hydrogens=False, node_featurizer=CanonicalAtomFeaturizer, edge_featurizer=CanonicalBondFeaturizer)
-
-#RDLogger.DisableLog('rdApp.*')
 bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
 files_to_process = []
 for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/raw/refined-set'):
@@ -53,21 +31,14 @@ for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/raw/refined
             files_to_process.append(full_path)
 
 def getAtomTypes():
-    graphs = []
     total = len(files_to_process)
     print("Starting to process " + str(total) + " files...")
     i = 0
-    total_atoms = 0
-    good_atoms = 0
     atoms = {"C"}
     for path in sorted(files_to_process):
         i += 1
         mol = Chem.MolFromPDBFile(path)
         try:
-            #frags = get_components(mol)
-            #total_atoms += frags[1]
-            #good_atoms += 1
-
             for atom in mol.GetAtoms():
                 type = atom.GetSymbol()
                 atoms.add(type)
@@ -105,9 +76,8 @@ def getBondTypes():
     print("Set of bond types:")
     print(bonds)
 
-import math
 
-def getAngleTypes():
+def getBfsAngleTypes():
     d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
 
     Q = []    # returns true if new things were added, i.e. we have new angles to calculate

@@ -1,15 +1,13 @@
 from __future__ import annotations
-
-import math
 from typing import Dict
-import torch
 from torch.distributions import Normal
 from tqdm import tqdm
 from torch_geometric.data import Data
 from linking.config.config import Config
-from linking.data.data_eval import to_rdkit, qed_score
+from linking.util.eval import to_rdkit, qed_score
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 

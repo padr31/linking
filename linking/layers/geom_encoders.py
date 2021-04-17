@@ -1,6 +1,5 @@
-import torch
-
 from linking.layers.schnet_custom import SchNet
+import torch
 
 
 class Sch(torch.nn.Module):

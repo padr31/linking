@@ -1,19 +1,16 @@
 from __future__ import annotations
-
 from typing import Dict
-
-import torch
 from tqdm import tqdm
-
-from linking.data.data_plotting import pos_plot_3D
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data
 from linking.config.config import Config
-from linking.data.data_eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count, \
-    to_rdkit, rdkit_sanitize, mol_to_svg, qed_score, mol_to_3d_svg
+from linking.util.eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count, \
+    to_rdkit, rdkit_sanitize, qed_score
+from linking.util.plotting import mol_to_svg, mol_to_3d_svg, pos_plot_3D
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from rdkit.Chem import PyMol
+import torch
 
 class Trainer:
     def __init__(self, model: torch.nn.Module, data, optimizer, config: Config):

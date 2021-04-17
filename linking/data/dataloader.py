@@ -1,12 +1,9 @@
 from __future__ import annotations
-
-import os
-
-import torch
-
 from linking.data.torchgeom_dude_loader import DudeLigandDataset, DudePocketDataset
 from linking.data.torchgeom_pdb_loader import PDBLigandDataset, PDBPocketDataset
 from linking.config.config import Config
+import os
+import torch
 
 def train_test_split(dataset, num_train, train_test_ratio, device):
     num_train = min(len(dataset), num_train)

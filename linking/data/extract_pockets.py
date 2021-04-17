@@ -1,15 +1,12 @@
-import os
-import pandas as pd
 from Bio.PDB import *
 from pathlib import Path
 from rdkit import Chem
-
-import numpy as np
 from tqdm import tqdm
+import numpy as np
+import os
 
 ROOT_DIR = Path("/Users/padr/repos/linking/datasets/dude/raw").resolve()
 targets = [dir for dir in os.listdir(ROOT_DIR) if not dir.startswith(".")]
-
 
 class DistanceSelect(Select):
     """Defines a selection class for writing a structure"""
@@ -70,7 +67,4 @@ for target in tqdm(targets):
     except:
         problematic.append(target)
         continue
-
-print(problematic)
-
 

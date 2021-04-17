@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 from torch import nn
-
 from linking.config.config import Config
 from linking.layers.gcn_encoders import GCNEncoder, CGCEncoder, GATEncoder, VariationalGATEncoder
 from linking.layers.geom_encoders import Sch

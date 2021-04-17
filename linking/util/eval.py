@@ -1,72 +1,8 @@
-import py3Dmol
 from rdkit import DataStructs, Chem
-from rdkit.Chem.Lipinski import NHOHCount, RingCount, NOCount, HeavyAtomCount
-from rdkit.Chem import rdDepictor, rdmolops, QED
-from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem.Lipinski import NHOHCount, RingCount, NOCount
+from rdkit.Chem import rdmolops, QED
 from rdkit.Geometry.rdGeometry import Point3D
-from rdkit.Chem import PyMol
-
-from linking.data.data_util import to_bond_index, to_atom
-
-def mol_to_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True):
-    mc = Chem.Mol(mol.ToBinary())
-    if kekulize:
-        try:
-            Chem.Kekulize(mc)
-        except:
-            mc = Chem.Mol(mol.ToBinary())
-    if sanitize:
-        try:
-            Chem.SanitizeMol(mc)
-        except:
-            mc = Chem.Mol(mol.ToBinary())
-    # if not mc.GetNumConformers():
-    rdDepictor.Compute2DCoords(mc)
-    drawer = rdMolDraw2D.MolDraw2DSVG(molSize[0], molSize[1])
-    drawer.DrawMolecule(mc)
-    drawer.FinishDrawing()
-    svg = drawer.GetDrawingText()
-    return svg.replace('svg:', '')
-
-
-def mol_to_3d_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True, viewer: PyMol.MolViewer=None, pocket_file: str= None):
-    mc = Chem.Mol(mol.ToBinary())
-    if kekulize:
-        try:
-            Chem.Kekulize(mc)
-        except:
-            mc = Chem.Mol(mol.ToBinary())
-    if sanitize:
-        try:
-            Chem.SanitizeMol(mc)
-        except:
-            mc = Chem.Mol(mol.ToBinary())
-
-    # for starting pymol from here
-    # import subprocess
-    # cmd = subprocess.Popen(['pymol', '-cKRQ'])
-
-    viewer.DeleteAll()
-    viewer.ShowMol(mc, confId=0, name='ligand', showOnly=False)
-    if not pocket_file is None:
-        viewer.LoadFile(pocket_file, 'protein')
-        viewer.SetDisplayStyle('protein', 'surface')
-    viewer.Zoom('protein')
-    viewer.server.do('color white, protein')
-    # viewer.server.do('turn x, 180')
-    png = viewer.GetPNG()
-    return png
-
-    '''
-    Only works in jupyter
-    view = py3Dmol.view(width=molSize[0], height=molSize[1])
-    mb = Chem.MolToMolBlock(mol, confId=0)
-    view.addModel(mb, 'sdf')
-    view.zoomTo()
-    view.show()
-    return view.png()
-    '''
-
+from linking.util.encoding import to_bond_index, to_atom
 
 def to_rdkit(data, device=None):
     has_pos = hasattr(data, 'pos') and (not data.pos is None)

@@ -1,16 +1,15 @@
 from __future__ import annotations
-import os
-import torch
 from torch_geometric.data import InMemoryDataset
-from linking.data.data_plotting import torchgeom_plot_3D
-from linking.data.data_util import pdb_file_to_torch_geometric, mol2_file_to_torch_geometric, allowable_atoms, \
-    ligand_bond_to_one_hot, pocket_bond_to_one_hot
+from linking.data.data_util import pdb_file_to_torch_geometric, mol2_file_to_torch_geometric
+from linking.util.encoding import allowable_atoms, ligand_bond_to_one_hot, pocket_bond_to_one_hot
 from rdkit import Chem
 from pathlib import Path
 from typing import Dict, List
-import pandas as pd
 from rdkit.Chem.rdmolfiles import SDMolSupplier
 from tqdm import tqdm
+import pandas as pd
+import os
+import torch
 
 bad_data = ['AA2AR', 'FGFR1', 'DEF', 'MCR', 'ROCK1', 'THB']
 

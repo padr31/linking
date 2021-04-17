@@ -1,15 +1,14 @@
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from rdkit import Chem
-from rdkit.Chem import rdDepictor
+from mpl_toolkits.mplot3d import Axes3D
+from torch_geometric.utils.convert import to_networkx
+from rdkit.Chem import PyMol
 from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import rdDepictor
+from linking.util.encoding import to_atom
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import networkx as nx
-from torch_geometric.utils.convert import to_networkx
-
-from linking.data.data_util import to_atom
-
 
 def torchgeom_plot(graph):
     def to_atom(t):
@@ -71,7 +70,6 @@ def networkx_plot_3D(G, angle):
 
     plt.show()
     return
-
 
 def pos_plot_3D(pos, edge_index, atoms, angle, save_name=None):
     # Get node positions
@@ -183,25 +181,60 @@ def plot_nx_3D(g):
 
     plt.show()
 
-'''
-Usage
-mol = Chem.MolFromPDBFile(
-    "/Users/padr/repos/linking/datasets/raw/refined-set/1g7v/1g7v_pocket.pdb"
-)
-with open("out.svg", "w") as svg_file:
-    svg_file.write(mol_to_svg(mol))
-'''
-def mol_to_svg(mol, molSize=(300, 300), kekulize=True):
+def mol_to_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True):
     mc = Chem.Mol(mol.ToBinary())
     if kekulize:
         try:
             Chem.Kekulize(mc)
         except:
             mc = Chem.Mol(mol.ToBinary())
-    if not mc.GetNumConformers():
-        rdDepictor.Compute2DCoords(mc)
+    if sanitize:
+        try:
+            Chem.SanitizeMol(mc)
+        except:
+            mc = Chem.Mol(mol.ToBinary())
+    # if not mc.GetNumConformers():
+    rdDepictor.Compute2DCoords(mc)
     drawer = rdMolDraw2D.MolDraw2DSVG(molSize[0], molSize[1])
     drawer.DrawMolecule(mc)
     drawer.FinishDrawing()
     svg = drawer.GetDrawingText()
-    return svg.replace("svg:", "")
+    return svg.replace('svg:', '')
+
+def mol_to_3d_svg(mol, molSize=(300, 300), kekulize=True, sanitize=True, viewer: PyMol.MolViewer=None, pocket_file: str= None):
+    mc = Chem.Mol(mol.ToBinary())
+    if kekulize:
+        try:
+            Chem.Kekulize(mc)
+        except:
+            mc = Chem.Mol(mol.ToBinary())
+    if sanitize:
+        try:
+            Chem.SanitizeMol(mc)
+        except:
+            mc = Chem.Mol(mol.ToBinary())
+
+    # for starting pymol from here
+    # import subprocess
+    # cmd = subprocess.Popen(['pymol', '-cKRQ'])
+
+    viewer.DeleteAll()
+    viewer.ShowMol(mc, confId=0, name='ligand', showOnly=False)
+    if not pocket_file is None:
+        viewer.LoadFile(pocket_file, 'protein')
+        viewer.SetDisplayStyle('protein', 'surface')
+    viewer.Zoom('protein')
+    viewer.server.do('color white, protein')
+    # viewer.server.do('turn x, 180')
+    png = viewer.GetPNG()
+    return png
+
+    '''
+    Only works in jupyter
+    view = py3Dmol.view(width=molSize[0], height=molSize[1])
+    mb = Chem.MolToMolBlock(mol, confId=0)
+    view.addModel(mb, 'sdf')
+    view.zoomTo()
+    view.show()
+    return view.png()
+    '''

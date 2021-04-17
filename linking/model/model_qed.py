@@ -1,9 +1,8 @@
-import torch
 from linking.config.config import Config
 from linking.layers.gcn_encoders import VariationalGATEncoder
-from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import MLP
 from torch.distributions import Normal
+import torch
 import torch.nn.functional as F
 
 class QED(torch.nn.Module):

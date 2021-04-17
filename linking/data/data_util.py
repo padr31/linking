@@ -1,122 +1,23 @@
-import shutil
-
 from biopandas.pdb import PandasPdb
 from rdkit import Chem
-import torch
-from torch_geometric.utils.convert import to_networkx
 from pathlib import Path
+from torch_geometric.utils.convert import to_networkx
+from biopandas.mol2 import PandasMol2
+from torch_geometric import data
+from linking.util.encoding import empty_bond, to_one_hot
+import shutil
+import torch
 import os
 import re
 import numpy as np
-from biopandas.mol2 import PandasMol2
-from torch_geometric import data
 import dgl
 import networkx as nx
 import pandas as pd
 
-allowable_atoms = ['C', 'F', 'N', 'Cl', 'O', 'I', 'P', 'Br', 'S', 'H', 'Stop']
-allowable_ligand_bonds = ["1", "2", "3", "ar", "am"]
-
-allowable_rdkit_bonds = [
-    Chem.rdchem.BondType.AROMATIC,
-    Chem.rdchem.BondType.SINGLE,
-    Chem.rdchem.BondType.DOUBLE,
-    Chem.rdchem.BondType.TRIPLE,
-]
-
-ligand_bond_to_one_hot = {
-    "1": [1., 0., 0., 0.],
-    "2": [0., 1., 0., 0.],
-    "3": [0., 0., 1., 0.],
-    "ar": [0., 0., 0., 1.],
-    "am": [1., 0., 0., 0.],
-}
-
-pocket_bond_to_one_hot = {
-    Chem.rdchem.BondType.AROMATIC: [0., 0., 0., 1.],
-    Chem.rdchem.BondType.SINGLE: [1., 0., 0., 0.],
-    Chem.rdchem.BondType.DOUBLE: [0., 1., 0., 0.],
-    Chem.rdchem.BondType.TRIPLE: [0., 0., 1., 0.],
-}
-
-empty_bond = [0., 0., 0., 0.]
-
-allowable_angles = [71, 60, 0]
-allowable_dihedrals = [180, 120, 60, 0, -60, -120, -180]
-
-def split_multi_mol2_file(path, dir_name):
-    delimiter = '@<TRIPOS>MOLECULE'
-    write_dir = Path(path).parent / dir_name
-    if not os.path.exists(str(write_dir)):
-        os.makedirs(str(write_dir))
-
-    def write(m):
-        wf = open(str(write_dir / (m[0] + '_actives_ligand.mol2')), "w")
-        for line in m[1]:
-            wf.write(line)
-        wf.close()
-
-    with open(path, 'r') as f:
-        mol2 = ['', []]
-        while True:
-            try:
-                line = next(f)
-                if line.startswith(delimiter):
-                    if mol2[0]:
-                        mol2[1].append('@')
-                        write(mol2)
-                    mol2 = ['', []]
-                    mol2_id = next(f)
-                    mol2[0] = mol2_id.rstrip()
-                    mol2[1].append(line)
-                    mol2[1].append(mol2_id)
-                else:
-                    mol2[1].append(line)
-            except StopIteration:
-                mol2[1].append('@')
-                write(mol2)
-                return
-
-def split_dude_dataset():
-    actives_or_decoys = 'actives'
-    # removing existing dir (optional)
-    for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/dude/raw/'):
-        for dir in dirs:
-            if dir == actives_or_decoys:
-                shutil.rmtree(path + os.sep + dir)
-
-    files_to_process = []
-    for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/dude/raw/'):
-    #for path, dirs, files in os.walk('/Users/padr/Desktop/aa2ar'):
-        for file in files:
-            if file.endswith(actives_or_decoys + '_final.mol2'):
-                full_path = path + os.sep + file
-                files_to_process.append(full_path)
-    print(files_to_process)
-    print(len(files_to_process))
-    for file in files_to_process:
-        split_multi_mol2_file(file, actives_or_decoys)
-
-# split_dude_dataset()
-
-def to_one_hot(x, allowable_set=None, mapping=None):
-    """
-    Function for one hot encoding
-    :param x: value to one-hot
-    :param allowable_set: set of options to encode
-    :param mapping: exact mapping from x to one hot, preferred over allowable set
-    :return: one-hot encoding as torch tensor
-    """
-    if not mapping is None:
-        return mapping[x].copy()
-    else:
-        return [1 if x == s else 0 for s in allowable_set]
-
 def bfs(geom_graph):
     G = to_networkx(geom_graph, to_undirected=True)
-
     '''
-    plotting bfs step-by-step
+    plotting bfs step-by-step for debugging
     l = nx.spring_layout(G)
     if geom_graph.name.endswith('10gs_ligand.mol2'):
         n_list = []
@@ -155,36 +56,19 @@ def bfs_distance(start, adj):
         Perform BFS on the adj and return distances to start node.
     '''
     dist = [100] * adj.size()[0]
-    # Visited vector to so that a
-    # vertex is not visited more than
-    # once Initializing the vector to
-    # false as no vertex is visited at
-    # the beginning
     visited = [False] * adj.size()[0]
     q = [start]
 
-    # Set source as visited
     visited[start] = True
     dist[start] = 0
 
     while q:
         vis = q[0]
-
-        # Print current node
-        print(vis, end=' ')
         q.pop(0)
-
-        # For every adjacent vertex to
-        # the current vertex
         for i in range(adj.size()[0]):
-            if (adj[vis][i] and
-                    (not visited[i])):
-                # Push the adjacent node
-                # in the queue
+            if adj[vis][i] and (not visited[i]):
                 q.append(i)
                 dist[i] = dist[visited] + 1
-
-                # set
             visited[i] = True
     return dist
 
@@ -201,7 +85,6 @@ def parse_mol2_bonds(filename):
         )
         df_bonds.set_index(["bond_id"], inplace=True)
         return df_bonds
-
 
 def mol2_file_to_networkx(path):
     bonds = parse_mol2_bonds(path)
@@ -343,189 +226,54 @@ def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
 
     return geom_graph
 
-def to_atom(t):
-    return allowable_atoms[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=t.device)).item())]
+def split_multi_mol2_file(path, dir_name):
+    delimiter = '@<TRIPOS>MOLECULE'
+    write_dir = Path(path).parent / dir_name
+    if not os.path.exists(str(write_dir)):
+        os.makedirs(str(write_dir))
 
-def to_bond_valency(t):
-    t_s = t.squeeze()
-    return [1, 2, 3, 2][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=t.device)).item())]
+    def write(m):
+        wf = open(str(write_dir / (m[0] + '_actives_ligand.mol2')), "w")
+        for line in m[1]:
+            wf.write(line)
+        wf.close()
 
-def to_bond_index(t):
-    t_s = t.squeeze()
-    return [1, 2, 3, 4][int(torch.dot(t_s, torch.tensor(range(t_s.size()[0]), dtype=torch.float, device=t.device)).item())]
+    with open(path, 'r') as f:
+        mol2 = ['', []]
+        while True:
+            try:
+                line = next(f)
+                if line.startswith(delimiter):
+                    if mol2[0]:
+                        mol2[1].append('@')
+                        write(mol2)
+                    mol2 = ['', []]
+                    mol2_id = next(f)
+                    mol2[0] = mol2_id.rstrip()
+                    mol2[1].append(line)
+                    mol2[1].append(mol2_id)
+                else:
+                    mol2[1].append(line)
+            except StopIteration:
+                mol2[1].append('@')
+                write(mol2)
+                return
 
-def to_bond_symbol(t):
-    return ['-', '=', ':=:', '..'][to_bond_index(t) - 1]
+def split_dude_dataset():
+    actives_or_decoys = 'actives'
+    # removing existing dir (optional)
+    for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/dude/raw/'):
+        for dir in dirs:
+            if dir == actives_or_decoys:
+                shutil.rmtree(path + os.sep + dir)
 
-def to_bond_length(a1, a2, bond):
-    key = to_atom(a1) + to_bond_symbol(bond) + to_atom(a2)
-    x = allowable_bond_lengths[key] if key in allowable_bond_lengths else allowable_bond_lengths['arbitrary']
-    return torch.tensor(x, device=a1.device)
-
-def to_angle(t):
-    return allowable_angles[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=t.device)).item())]
-
-def to_dihedral(t):
-    return allowable_dihedrals[int(torch.dot(t, torch.tensor(range(t.size()[0]), dtype=torch.float, device=t.device)).item())]
-
-def closest(a, arr):
-    return min(arr, key=lambda x: abs(x - a))
-
-def encode_angle(angle, device=None):
-    discretised_angle = closest(180*angle/np.pi, allowable_angles)
-    return torch.tensor(to_one_hot(discretised_angle, allowable_angles), device=device, dtype=torch.float)
-
-def encode_dihedral(dihedral, device=None):
-    discretised_dihedral = closest(180*dihedral/np.pi, allowable_dihedrals)
-    return torch.tensor(to_one_hot(discretised_dihedral, allowable_dihedrals), device=device, dtype=torch.float)
-
-def calc_angle(v2, v3):
-    sin_theta = np.linalg.norm(np.cross(v2, v3))
-    cos_theta = np.dot(v2, v3)
-    return np.arctan2(sin_theta, cos_theta)
-
-def calc_dihedral(v1, v2, v3):
-    """
-       Calculate dihedral angle between 4 atoms
-       For more information, see:
-           http://math.stackexchange.com/a/47084
-    """
-    # Normal vector of plane containing v1,v2
-    n1 = np.cross(v1, v2)
-    n1 = n1 / np.linalg.norm(n1)
-
-    # Normal vector of plane containing v2,v3
-    n2 = np.cross(v2, v3)
-    n2 = n2 / np.linalg.norm(n2)
-
-    # un1, ub2, and um1 form orthonormal frame
-    uv2 = v2 / np.linalg.norm(v2)
-    m1 = np.cross(n1, uv2)
-    m1 = m1 / np.linalg.norm(m1)
-
-    # dot(ub2, n2) is always zero
-    x = np.dot(n1, n2)
-    y = np.dot(m1, n2)
-
-    dihedral = np.arctan2(y, x)
-    return dihedral
-
-def calc_position(v1, v2, p3, dst, ang, dih):
-    """Calculate position x of another atom based on
-       internal coordinates between v1, v2, (p3,x)
-       using distance, angle, and dihedral angle.
-    """
-    # Normal vector of plane containing v1,v2
-    n1 = np.cross(v1, v2)
-    if np.linalg.norm(n1) == 0:
-        print('null')
-    n1 = n1 / np.linalg.norm(n1)
-
-    # un1, ub2, and um1 form orthonormal frame
-    uv2 = v2 / np.linalg.norm(v2)
-    m1 = np.cross(n1, uv2)
-    m1 = m1 / np.linalg.norm(m1)
-
-    n2 = np.cos(dih)*n1 + np.sin(dih)*m1
-    if np.linalg.norm(n2) == 0.0:
-        print('null')
-    n2 = n2 / np.linalg.norm(n2)
-
-    nn2 = np.cross(n2, uv2)
-    nn2 = nn2 / np.linalg.norm(nn2)
-    v3 = np.cos(ang)*uv2 + np.sin(ang)*nn2
-    v3 = v3 / np.linalg.norm(v3)
-
-    position = p3 + dst * v3
-
-    return position
-
-'''
-The following functions use the representation v1 = p2-p1, v2 = p3-p2, v3 = p4-p3
-'''
-def calc_angle_p(p2, p3, p4):
-    return calc_angle(p3-p2, p4-p3)
-
-def calc_dihedral_p(p1, p2, p3, p4):
-    return calc_dihedral(p2-p1, p3-p2, p4-p3)
-
-def calc_position_p(p1, p2, p3, dst, ang, dih):
-    return calc_position(p2-p1, p3-p2, p3, dst, ang, dih)
-
-
-allowable_bond_lengths = {
-"C-N":1.4107755,
-"C-C":1.5150901,
-"C..O":1.255712,
-"C=O":1.2334914,
-"N-C":1.4107754,
-"C-S":1.7459718,
-"S-C":1.7459718,
-"C..C":1.4013792,
-"N-H":1.0122557,
-"C-H":1.095748,
-"O..C":1.255712,
-"O=C":1.2334915,
-"H-N":1.0122557,
-"H-C":1.095748,
-"C=C":1.3827366,
-"C-O":1.4193139,
-"O-P":1.603689,
-"P..O":1.5154448,
-"O-C":1.4193139,
-"P-O":1.603689,
-"O..P":1.5154448,
-"P-N":1.6737605,
-"C=N":1.3358338,
-"O-H":0.9500009,
-"N-P":1.6737605,
-"N=C":1.3358338,
-"H-O":0.9500009,
-"S=O":1.4604245,
-"N..C":1.3490263,
-"C..N":1.3490263,
-"N-S":1.6302401,
-"O=S":1.4604245,
-"S-N":1.6302402,
-"N-N":1.3555375,
-"N=O":1.2924565,
-"O=N":1.2924569,
-"C-F":1.3404396,
-"C-Cl":1.7358768,
-"F-C":1.3404396,
-"Cl-C":1.7358768,
-"P-C":1.8017883,
-"C-P":1.8017882,
-"S-H":1.008008,
-"H-S":1.008008,
-"N-O":1.374657,
-"O-N":1.374657,
-"C-I":2.1217341,
-"I-C":2.1217341,
-"C-Br":1.897452,
-"Br-C":1.897452,
-"S..O":1.4803548,
-"O..S":1.4803548,
-"P=O":1.5383024,
-"O=P":1.5383024,
-"N=N":1.3202432,
-"C:=:N":1.1414758,
-"N:=:C":1.1414758,
-"C:=:C":1.1998755,
-"S=N":1.5981185,
-"N=S":1.5981185,
-"S-S":2.046078,
-"O-S":1.5391866,
-"S-O":1.5391866,
-"P=S":1.9899822,
-"S=P":1.9899822,
-"N..N":1.3403707,
-"C=S":1.6924675,
-"S=C":1.6924675,
-"P-H":1.0079916,
-"H-P":1.0079916,
-"P-S":2.0013974,
-"S-P":2.0013974,
-"N:=:N":1.1924888,
-"arbitrary": 1.5150901,
-}
+    files_to_process = []
+    for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/dude/raw/'):
+        for file in files:
+            if file.endswith(actives_or_decoys + '_final.mol2'):
+                full_path = path + os.sep + file
+                files_to_process.append(full_path)
+    print(files_to_process)
+    print(len(files_to_process))
+    for file in files_to_process:
+        split_multi_mol2_file(file, actives_or_decoys)
