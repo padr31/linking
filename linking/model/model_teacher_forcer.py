@@ -4,7 +4,7 @@ from linking.layers.gcn_encoders import GCNEncoder
 from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, LinearEdgeRowClassifier, LinearEdgeClassifier
 from linking.data.data_util import to_one_hot, allowable_atoms, to_bond_valency, to_bond_index, to_atom, to_bond_length, \
-    calc_position, calc_angle, calc_dihedral, allowable_angles, allowable_dihedrals, encode_angle, encode_dihedral, \
+    calc_position, calc_angle, calc_dihedral, encode_angle, encode_dihedral, \
     to_angle, to_dihedral, calc_angle_p, calc_position_p, calc_dihedral_p
 import numpy as np
 

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 class Config(BaseModel):
     # Core stuff
     root_dir: str = "./"
-    dataset: str = "pdb"
+    dataset: str = "dude"
     dataset_root: str = "./datasets/"
     dataset_root_pdb: str = "./datasets/pdb/"
     dataset_root_dude: str = "./datasets/dude/"
@@ -11,16 +11,16 @@ class Config(BaseModel):
     logdir: str = "./out_logdir/"
     logdir_qed: str = "./out_logdir_qed/"
     num_epochs: int = 50
-    learning_rate: float = 0.01  # 0.003 best
+    learning_rate: float = 0.003  # 0.003 best
 
     # Data stuff
     train_test_ratio: int = 10
-    num_train: int = 4096
-    eval_data: list = [0]
-    num_eval_generate: int = 20
+    num_train: int = 84
+    eval_data: list = [2]
+    num_eval_generate: int = 10
 
     # Model stuff
-    model: str = "QED"  # "MoleculeGenerator" # "SimpleModel"
+    model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"
     coords: bool = False
     batch_size: int = 16
     num_allowable_atoms = 11

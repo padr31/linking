@@ -12,7 +12,7 @@ import pandas as pd
 from rdkit.Chem.rdmolfiles import SDMolSupplier
 from tqdm import tqdm
 
-bad_data = ['FGFR1', 'DEF', 'MCR', 'ROCK1', 'THB']
+bad_data = ['AA2AR', 'FGFR1', 'DEF', 'MCR', 'ROCK1', 'THB']
 
 def create_dude_index_file(file):
     """
@@ -153,7 +153,7 @@ class DudeLigandDataset(InMemoryDataset):
             print("(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path))
             g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot)
 
-            torchgeom_plot_3D(g, 90)
+            # torchgeom_plot_3D(g, 90)
             graphs.append(g)
 
         if self.pre_filter is not None:
@@ -178,7 +178,7 @@ class DudePocketDataset(InMemoryDataset):
     def process(self):
         # Read data into huge `Data` list. and save
         files_to_process = process_dir(
-            self.raw_dir, "receptor_protonated.pdb", bad_data
+            self.raw_dir, "pocket.pdb", bad_data
         )
 
         graphs = []
