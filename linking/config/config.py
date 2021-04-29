@@ -14,10 +14,13 @@ class Config(BaseModel):
     learning_rate: float = 0.003  # 0.003 best
 
     # Data stuff
+    num_train: int = 64
+    num_test: int = 16
     train_test_ratio: int = 10
-    num_train: int = 84
-    eval_data: list = [2]
-    num_eval_generate: int = 10
+    specific_pockets: list = None  # relevant for dude, when set, only trains on ligands for the selected protein
+    ligands_per_pocket: int = 32
+    eval_data: list = [0, 1, 2]
+    num_eval_generate: int = 20
 
     # Model stuff
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"

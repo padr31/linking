@@ -39,7 +39,7 @@ class Trainer:
         for i in tqdm(range(len(self.X_ligand_train))):
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
-            # assert x_ligand.name.split('/')[-1].split('_')[0] == x_pocket.name.split('/')[-1].split('_')[0]
+            assert (not x_ligand.protein_name is None) and (x_ligand.protein_name == x_pocket.protein_name)
 
             prediction = self.model(x_pocket, x_ligand, generate=False, coords=self.config.coords)
             loss_f = torch.nn.L1Loss()

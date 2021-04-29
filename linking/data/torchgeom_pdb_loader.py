@@ -43,7 +43,8 @@ class PDBLigandDataset(InMemoryDataset):
             print(
                 "(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path)
             )
-            g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot)
+            protein_name = path.split('/')[-2]
+            g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot, protein_name)
             # torchgeom_plot_3D(g, 90)
             graphs.append(g)
 
@@ -81,7 +82,8 @@ class PDBPocketDataset(InMemoryDataset):
             print(
                 "(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path)
             )
-            g = pdb_file_to_torch_geometric(path, allowable_atoms, pocket_bond_to_one_hot)
+            protein_name = path.split('/')[-2]
+            g = pdb_file_to_torch_geometric(path, allowable_atoms, pocket_bond_to_one_hot, protein_name)
             # torchgeom_plot_3D(g, 90)
             graphs.append(g)
 

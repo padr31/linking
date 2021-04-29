@@ -150,7 +150,8 @@ class DudeLigandDataset(InMemoryDataset):
         for path in sorted(files_to_process):
             i += 1
             print("(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path))
-            g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot)
+            protein_name = path.split('/')[-3]
+            g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot, protein_name)
 
             # torchgeom_plot_3D(g, 90)
             graphs.append(g)
@@ -187,7 +188,8 @@ class DudePocketDataset(InMemoryDataset):
         for path in sorted(files_to_process):
             i += 1
             print("(" + str(int(100 * i / total)) + "%) Processing " + path)
-            g = pdb_file_to_torch_geometric(path, allowable_atoms, pocket_bond_to_one_hot)
+            protein_name = path.split('/')[-2]
+            g = pdb_file_to_torch_geometric(path, allowable_atoms, pocket_bond_to_one_hot, protein_name)
             # torchgeom_plot_3D(g, 90)
             graphs.append(g)
 

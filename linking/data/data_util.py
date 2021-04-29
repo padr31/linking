@@ -106,7 +106,7 @@ def mol2_file_to_networkx(path):
 
     return g
 
-def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
+def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_name=None):
     def featurise_ligand_atoms(atoms_df):
         atoms_df["atom_id"] = atoms_df["atom_id"] - 1
         atoms_df.loc[:, "atom_type"] = atoms_df["atom_type"].apply(
@@ -156,6 +156,7 @@ def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
         ).contiguous(),
         edge_attr=edge_features,
         name=path,
+        protein_name=protein_name,
         bfs_index=None,
         bfs_attr=None,
     )
@@ -171,7 +172,7 @@ def mol2_file_to_dgl(path):
     )
     return g
 
-def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
+def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_name=None):
     mol = Chem.MolFromPDBFile(path)
 
     # TODO: add hydrogens?
@@ -221,7 +222,8 @@ def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot):
         x=torch.tensor(node_features, dtype=torch.float),
         edge_index=torch.tensor([edge_src, edge_dst], dtype=torch.long).contiguous(),
         edge_attr=torch.tensor(edge_types, dtype=torch.float).contiguous(),
-        name=path
+        name=path,
+        protein_name=protein_name
     )
 
     return geom_graph
