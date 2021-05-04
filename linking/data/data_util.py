@@ -55,22 +55,22 @@ def bfs_distance(start, adj):
     '''
         Perform BFS on the adj and return distances to start node.
     '''
-    dist = [100] * adj.size()[0]
-    visited = [False] * adj.size()[0]
-    q = [start]
+    dist = torch.ones_like(adj[0], device=adj.device) * 100
+    visited = torch.zeros_like(adj[0], dtype=torch.bool, device=adj.device)
+    q = torch.tensor([start])
 
     visited[start] = True
     dist[start] = 0
 
-    while q:
+    while q.size()[0] > 0:
         vis = q[0]
-        q.pop(0)
+        q = q[1:]
         for i in range(adj.size()[0]):
             if adj[vis][i] and (not visited[i]):
-                q.append(i)
-                dist[i] = dist[visited] + 1
+                q = torch.cat([q, torch.unsqueeze(torch.tensor(i, device=adj.device), 0)])
+                dist[i] = dist[vis] + 1
             visited[i] = True
-    return dist
+    return dist.unsqueeze(1)
 
 def parse_mol2_bonds(filename):
     with open(filename, "r") as f:
@@ -106,17 +106,19 @@ def mol2_file_to_networkx(path):
 
     return g
 
-def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_name=None):
+def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_name=None, remove_hydrogens=True):
     def featurise_ligand_atoms(atoms_df):
-        atoms_df["atom_id"] = atoms_df["atom_id"] - 1
         atoms_df.loc[:, "atom_type"] = atoms_df["atom_type"].apply(
-            lambda a: to_one_hot(a.split(".")[0], allowable_atoms)
+            lambda a: a.split(".")[0]
+        )
+        atoms_df.loc[:, "atom_type_feature"] = atoms_df["atom_type"].apply(
+            lambda a: to_one_hot(a, allowable_atoms)
         )
 
     def featurise_ligand_bonds(bonds_df):
-        bonds_df.loc[:, "atom1"] = bonds_df["atom1"].apply(lambda s: int(s) - 1)
-        bonds_df.loc[:, "atom2"] = bonds_df["atom2"].apply(lambda s: int(s) - 1)
-        bonds_df.loc[:, "bond_type"] = bonds_df["bond_type"].apply(
+        bonds_df.loc[:, "atom1"] = bonds_df["atom1"].apply(lambda s: int(s))
+        bonds_df.loc[:, "atom2"] = bonds_df["atom2"].apply(lambda s: int(s))
+        bonds_df.loc[:, "bond_type_feature"] = bonds_df["bond_type"].apply(
             lambda b: to_one_hot(b, mapping=bond_to_one_hot)
         )
 
@@ -124,6 +126,22 @@ def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein
     atoms = PandasMol2().read_mol2(path).df
     featurise_ligand_atoms(atoms)
     featurise_ligand_bonds(bonds)
+
+    if remove_hydrogens:
+        hydrogen_idx = atoms.index[atoms['atom_type'] == 'H'].tolist()
+        hydrogen_atom_idx = atoms.loc[hydrogen_idx]['atom_id'].to_list()
+        hydrogen_bond_idx = []
+        for bond_index, bond_row in bonds.iterrows():
+            if int(bond_row['atom1']) in hydrogen_atom_idx or int(bond_row['atom2']) in hydrogen_atom_idx:
+                hydrogen_bond_idx.append(bond_index)
+        atoms = atoms.drop(hydrogen_idx)
+        bonds = bonds.drop(hydrogen_bond_idx)
+
+    current_atom_index = 0
+    atom_id_to_index = {}
+    for atoms_index, atoms_row in atoms.iterrows():
+        atom_id_to_index[atoms_row['atom_id']] = current_atom_index
+        current_atom_index += 1
 
     bonds_other_direction = bonds.copy(deep=True)
     bonds_other_direction = bonds_other_direction.rename(
@@ -133,15 +151,22 @@ def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein
 
     features = [
         torch.tensor([f for f in atoms[feat].tolist()], dtype=torch.float)
-        for feat in ["atom_id", "x", "y", "z", "atom_type"]
+        for feat in ["atom_id", "x", "y", "z", "atom_type_feature"]
     ]
     features = [f.unsqueeze(dim=1) if len(f.shape) == 1 else f for f in features]
     node_features = torch.cat(features, dim=1)
 
+    edge_indices = [
+        list(map(lambda atom_id: atom_id_to_index[atom_id], bonds["atom1"].tolist())),
+        list(map(lambda atom_id: atom_id_to_index[atom_id], bonds["atom2"].tolist()))]
+    edge_indices = torch.tensor(
+        edge_indices, dtype=torch.long
+    ).contiguous()
+
     # Get edge features and concatenate them
     edge_features = [
         torch.tensor([edge for edge in bonds[feat].tolist()], dtype=torch.float)
-        for feat in ["bond_type"]
+        for feat in ["bond_type_feature"]
     ]
     edge_features = [
         e.unsqueeze(dim=1) if len(e.shape) == 1 else e for e in edge_features
@@ -151,9 +176,7 @@ def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein
     # Create the Torch Geometric graph
     geom_graph = data.Data(
         x=node_features,
-        edge_index=torch.tensor(
-            [bonds["atom1"].tolist(), bonds["atom2"].tolist()], dtype=torch.long
-        ).contiguous(),
+        edge_index=edge_indices,
         edge_attr=edge_features,
         name=path,
         protein_name=protein_name,

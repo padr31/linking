@@ -20,7 +20,8 @@ def process_dir(dir, file_ending, bad_data):
     return files_to_process
 
 class PDBLigandDataset(InMemoryDataset):
-    def __init__(self, root, transform=None, pre_transform=None):
+    def __init__(self, root, transform=None, pre_transform=None, config=None):
+        self.config = config
         super(PDBLigandDataset, self).__init__(root, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
 
@@ -44,7 +45,7 @@ class PDBLigandDataset(InMemoryDataset):
                 "(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path)
             )
             protein_name = path.split('/')[-2]
-            g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot, protein_name)
+            g = mol2_file_to_torch_geometric(path, allowable_atoms, ligand_bond_to_one_hot, protein_name, self.config.remove_hydrogens)
             # torchgeom_plot_3D(g, 90)
             graphs.append(g)
 
@@ -59,7 +60,8 @@ class PDBLigandDataset(InMemoryDataset):
 
 
 class PDBPocketDataset(InMemoryDataset):
-    def __init__(self, root, transform=None, pre_transform=None):
+    def __init__(self, root, transform=None, pre_transform=None, config=None):
+        self.config = config
         super(PDBPocketDataset, self).__init__(root, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
 

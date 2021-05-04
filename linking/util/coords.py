@@ -43,9 +43,15 @@ def calc_position(v1, v2, p3, dst, ang, dih):
        using distance, angle, and dihedral angle.
     """
     # Normal vector of plane containing v1,v2
+    if np.linalg.norm(v2) == 0: # v2 can be 0 because there can be the same point twice with some probability
+        v2 = v2 + np.array([0., 0., 0.01])
+        print('null v2 solved')
+    if np.linalg.norm(v1) == 0:  # v1 can be 0 because of the same thing
+        v1 = v1 + np.array([0., 0., 0.01])
+        print('null v2 solved')
     n1 = np.cross(v1, v2)
     if np.linalg.norm(n1) == 0:
-        print('null')
+        print('problem')
     n1 = n1 / np.linalg.norm(n1)
 
     # un1, ub2, and um1 form orthonormal frame

@@ -1,3 +1,4 @@
+from ase.formula import Formula
 from rdkit import Chem
 import torch
 import numpy as np
@@ -29,7 +30,7 @@ pocket_bond_to_one_hot = {
 
 empty_bond = [0., 0., 0., 0.]
 
-allowable_angles = [71, 60, 0]
+allowable_angles = [71, 60, 1]
 allowable_dihedrals = [180, 120, 60, 0, -60, -120, -180]
 
 def to_one_hot(x, allowable_set=None, mapping=None):
@@ -81,6 +82,40 @@ def encode_angle(angle, device=None):
 def encode_dihedral(dihedral, device=None):
     discretised_dihedral = closest(180*dihedral/np.pi, allowable_dihedrals)
     return torch.tensor(to_one_hot(discretised_dihedral, allowable_dihedrals), device=device, dtype=torch.float)
+
+from ase.data import atomic_numbers
+
+def to_molgym_action_type(atom_label: torch.Tensor, atom_coords: torch.Tensor):
+    atomic_number = atomic_numbers[to_atom(atom_label)]
+    position = (atom_coords[0].item(), atom_coords[1].item(), atom_coords[2].item())
+
+    return (atomic_number, position)
+
+def ligand_to_molgym_formula(ligand_atoms: torch.Tensor):
+    atoms_dict = {}
+    atoms_list = [to_atom(one_hot_atom_label) for one_hot_atom_label in ligand_atoms]
+    for atom_symbol in atoms_list:
+        if atom_symbol in atoms_dict:
+            atoms_dict[atom_symbol] += 1
+        else:
+            atoms_dict[atom_symbol] = 1
+    formula = Formula.from_dict(atoms_dict)
+    assert formula.__eq__(Formula.from_list(atoms_list))
+    return formula
+
+def molgym_formula_to_ligand(formula: Formula, device):
+    atoms_dict = formula.count()
+    atoms_list = []
+    for k, v in atoms_dict.items():
+        atoms_list.extend([k] * v)
+    atoms_list = list(map(lambda atom_symbol: to_one_hot(atom_symbol, allowable_atoms), atoms_list))
+    ids_list = range(0, len(atoms_list))
+    coords_list = [[0., 0., 0.]]*len(atoms_list)
+    return torch.cat([
+        torch.tensor(ids_list, device=device).unsqueeze(1),
+        torch.tensor(coords_list, device=device),
+        torch.tensor(atoms_list, device=device)
+    ], dim=1)
 
 allowable_bond_lengths = {
 "C-N":1.4107755,

@@ -1,8 +1,13 @@
+from ase.formula import Formula
 from rdkit import DataStructs, Chem
 from rdkit.Chem.Lipinski import NHOHCount, RingCount, NOCount
 from rdkit.Chem import rdmolops, QED
 from rdkit.Geometry.rdGeometry import Point3D
-from linking.util.encoding import to_bond_index, to_atom
+from linking.util.encoding import to_bond_index, to_atom, allowable_atoms
+from molgym.environment import MolecularEnvironment
+from molgym.reward import InteractionReward
+from molgym.spaces import ObservationSpace, ActionSpace
+
 
 def to_rdkit(data, device=None):
     has_pos = hasattr(data, 'pos') and (not data.pos is None)
@@ -124,3 +129,14 @@ def qed_score(mol):
         return QED.qed(mol)
     except:
         return None
+
+def construct_molgym_environment(num_atoms, formulas):
+    reward = InteractionReward()
+    symbols = allowable_atoms[0:-1]
+    observation_space = ObservationSpace(canvas_size=num_atoms, symbols=symbols)
+    action_space = ActionSpace()
+    env = MolecularEnvironment(reward=reward,
+                               observation_space=observation_space,
+                               action_space=action_space,
+                               formulas=formulas)
+    return env

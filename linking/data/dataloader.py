@@ -49,9 +49,13 @@ def train_test_split_dude(ligand_data, pocket_data, num_train, num_test, device,
         pockets = []
         pockets_test = []
         for protein_name in specific_pockets:
-            ligands.extend(ligands_by_protein_name[protein_name][:num_train])
-            ligands_test.extend(ligands_by_protein_name[protein_name][num_train:num_train+num_test])
-            pockets.extend([copy.deepcopy(pockets_by_protein_name[protein_name]) for _ in range(num_train)])
+            max_num_ligands = len(ligands_by_protein_name[protein_name])
+            if max_num_ligands < num_test:
+                raise Exception('Not enough ligands')
+            num_ligands = min(ligands_per_pocket, max_num_ligands-num_test)
+            ligands.extend(ligands_by_protein_name[protein_name][:num_ligands])
+            ligands_test.extend(ligands_by_protein_name[protein_name][num_ligands:num_ligands+num_test])
+            pockets.extend([copy.deepcopy(pockets_by_protein_name[protein_name]) for _ in range(num_ligands)])
             pockets_test.extend([copy.deepcopy(pockets_by_protein_name[protein_name]) for _ in range(num_test)])
         return ligands, ligands_test, pockets, pockets_test
 
@@ -81,11 +85,11 @@ def to_dev(X_ligand_train, X_ligand_test, X_pocket_train, X_pocket_test, device)
 
 def create_data(config: Config, device: torch.device):
     if config.dataset == 'dude':
-        ligand_data = DudeLigandDataset(root=os.path.join(config.dataset_root, config.dataset))
-        pocket_data = DudePocketDataset(root=os.path.join(config.dataset_root, config.dataset))
+        ligand_data = DudeLigandDataset(root=os.path.join(config.dataset_root, config.dataset), config=config)
+        pocket_data = DudePocketDataset(root=os.path.join(config.dataset_root, config.dataset), config=config)
     elif config.dataset == 'pdb':
-        ligand_data = PDBLigandDataset(root=os.path.join(config.dataset_root, config.dataset))
-        pocket_data = PDBPocketDataset(root=os.path.join(config.dataset_root, config.dataset))
+        ligand_data = PDBLigandDataset(root=os.path.join(config.dataset_root, config.dataset), config=config)
+        pocket_data = PDBPocketDataset(root=os.path.join(config.dataset_root, config.dataset), config=config)
     else:
         raise Exception('Non-existing dataset identifier provided.')
 

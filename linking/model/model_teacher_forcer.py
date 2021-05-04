@@ -1,14 +1,18 @@
 from linking.config.config import Config
+from linking.data.data_util import bfs_distance
 from linking.layers.gcn_encoders import GCNEncoder
 from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, \
     LinearEdgeRowClassifier
 from linking.util.encoding import to_one_hot, allowable_atoms, to_bond_valency, to_bond_index, \
-    to_atom, to_bond_length, encode_dihedral, encode_angle, to_angle, to_dihedral
+    to_atom, to_bond_length, encode_dihedral, encode_angle, to_angle, to_dihedral, to_molgym_action_type, \
+    ligand_to_molgym_formula
 from linking.util.coords import calc_position, calc_angle, calc_dihedral, \
     calc_angle_p, calc_position_p, calc_dihedral_p
 import torch
 import numpy as np
+from linking.util.eval import construct_molgym_environment
+
 
 class TeacherForcer(torch.nn.Module):
     def __init__(self,
@@ -77,7 +81,6 @@ class TeacherForcer(torch.nn.Module):
             for i in unmask:
                 for j in unmask_bond:
                     e_mask[i, j-1] = 0.
-
         return e_mask
 
     def calculate_bond_mask_row(self, valencies, u, v, closed_mask, adj, unmask=None, unmask_bond=None):
@@ -107,10 +110,12 @@ class TeacherForcer(torch.nn.Module):
         l_mask[-1] = float('-inf')
         return l_mask.repeat(length, 1)
 
-    def forward(self, data_pocket, data_ligand, generate=False, coords=False):
+    def forward(self, data_pocket, data_ligand, generate=False, coords=False, molgym_eval=False):
         # Initialise data variables -------------------------
         x_p, edge_index_p, edge_attr_p = data_pocket.x, data_pocket.edge_index, data_pocket.edge_attr
         x_l, edge_index_l, edge_attr_l, bfs_index, bfs_attr = data_ligand.x, data_ligand.edge_index, data_ligand.edge_attr, data_ligand.bfs_index.clone(), data_ligand.bfs_attr.clone()
+        coord_v = None
+        rewards = 0
         if coords:
             x_pos_p = data_pocket.x[:, 1:4].detach()
             x_pos_l = data_ligand.x[:, 1:4].detach()
@@ -124,11 +129,11 @@ class TeacherForcer(torch.nn.Module):
 
         # Encode -------------------------
         # pocket gnn encoding
-        z_pocket_atoms = self.pocket_encoder(x_p, edge_index_p)
+        z_pocket_atoms = self.pocket_encoder(x_p, edge_index_p, None)
         z_pocket = torch.mean(z_pocket_atoms, dim=0)
 
         # ligand
-        z_ligand_atoms = self.ligand_encoder(x_l, edge_index_l)
+        z_ligand_atoms = self.ligand_encoder(x_l, edge_index_l, None) # if not generate else torch.normal(0, 1, size=(x_l.size(0), self.config.ligand_encoder_out_channels))
         z_ligand = torch.mean(z_ligand_atoms, dim=0)
         z_v = z_ligand_atoms
 
@@ -143,6 +148,11 @@ class TeacherForcer(torch.nn.Module):
         if generate:
             lab_v = x_l[:, 4:]
 
+        if molgym_eval:
+            molgym_env = construct_molgym_environment(lab_v.size()[0], [ligand_to_molgym_formula(lab_v)])
+            _, reward, _, _ = molgym_env.step(to_molgym_action_type(lab_v[0], coord_v[0]))
+            rewards += reward
+
         # Initialise decoding -------------------------
         # tensor variables
         H_init = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
@@ -152,9 +162,11 @@ class TeacherForcer(torch.nn.Module):
         l_stop = torch.tensor(to_one_hot('Stop', allowable_atoms), device=self.device)
         lab_v = torch.cat([lab_v, torch.unsqueeze(l_stop, 0)], 0)
         i_stop = torch.tensor(lab_v.size()[0] - 1, device=self.device)  # index of stop node
+        z_ligand_atoms = torch.cat([z_ligand_atoms, torch.zeros_like(z_v[0], device=self.device).unsqueeze(0)], 0)
         # init z_graph and x_latent using the first atom with a path to itself
         edge_index_init = torch.tensor([[0], [0]], dtype=torch.long, device=self.device) if generate else torch.stack([bfs_index[0][0].unsqueeze(0), bfs_index[0][1].unsqueeze(0)])
-        z_v = self.g_dec(lab_v, edge_index_init)
+        edge_attr_init = torch.tensor([[0, 0, 0, 0]], dtype=torch.long, device=self.device)
+        z_v = self.g_dec(torch.cat([z_ligand_atoms, lab_v], dim=1), edge_index_init, None)
         H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
         adj = torch.zeros(lab_v.shape[0], lab_v.shape[0], device=self.device, dtype=torch.bool)
 
@@ -173,8 +185,9 @@ class TeacherForcer(torch.nn.Module):
             u = Q[0]
 
             # for top of queue u and each atom v in nodes compute
-            # edge feature phi = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, G]
-            num_nodes = len(z_v)
+            # edge feature phi = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, d, G]
+            num_nodes = z_v.size()[0]
+            dist_v = bfs_distance(u, adj)
             phi = torch.cat((
                 torch.tensor([time], device=self.device).unsqueeze(0).repeat(num_nodes, 1),
                 z_pocket.unsqueeze(0).repeat(num_nodes, 1),  # pocket agg latent
@@ -182,6 +195,7 @@ class TeacherForcer(torch.nn.Module):
                 lab_v[u].repeat(num_nodes, 1),  # u label
                 z_v,  # latents
                 lab_v,  # labels
+                dist_v,
                 H_t.unsqueeze(0).repeat(num_nodes, 1),  # graph agg latent
                 H_init.unsqueeze(0).repeat(num_nodes, 1)  # graph initial agg latent
             ), dim=1)
@@ -245,8 +259,9 @@ class TeacherForcer(torch.nn.Module):
 
             lab_v = lab_v.detach()
             edge_index = edge_index.detach()
+            z_ligand_atoms.detach()
             # compute z_graph = gnn(x_label, edge_index) of the graph
-            z_v = self.g_dec(lab_v, edge_index)
+            z_v = self.g_dec(torch.cat([z_ligand_atoms, lab_v], dim=1), edge_index, None)
             H_t = torch.mean(torch.cat([z_v, lab_v], dim=1), dim=0)
 
             # once new edge added, compute its coordinates
@@ -278,8 +293,14 @@ class TeacherForcer(torch.nn.Module):
                                           device=self.device) if generate else x_pos_l[v].clone().detach()
                 coord_helper.add_point(v, coord_v[v].clone().detach())
 
+                if molgym_eval:
+                    _, reward, _, _ = molgym_env.step(to_molgym_action_type(lab_v[v], coord_v[v]))
+                    rewards += reward
+                    print(reward)
+
             time = time + torch.tensor(1, device=self.device)
-        return (lab_v, edge_index, edge_attr, coord_v if coords else lab_v, edge_index, edge_attr) if generate else (log_prob + log_prob_coords if coords else log_prob)
+
+        return (lab_v, edge_index, edge_attr, coord_v, rewards) if generate else (log_prob + log_prob_coords if coords else log_prob)
 
     def parameters(self):
        return [
@@ -331,6 +352,13 @@ class CoordinateHelper:
     def min_dist_points(self, p: torch.Tensor):
         p = p.cpu().numpy()
         sorted_coords = [v for k, v in sorted(self.coords.items(), key=lambda item: np.linalg.norm(item[1] - p))]
+        sorted_coords_dedup = [sorted_coords[0]]
+        for coor in sorted_coords:
+            if np.linalg.norm(sorted_coords_dedup[-1]-coor) == 0:
+                continue
+            else:
+                sorted_coords_dedup.append(coor)
+        sorted_coords = sorted_coords_dedup
         num_coords = len(sorted_coords)
         if num_coords == 0 or num_coords == 1:  # if there is only one coord, then it is the origin
             return p+self.p1_aux, p+self.p2_aux

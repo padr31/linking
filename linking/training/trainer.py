@@ -1,9 +1,12 @@
 from __future__ import annotations
 from typing import Dict
+
+from ase.formula import Formula
 from tqdm import tqdm
 from linking.layers.gcn_encoders import GCNEncoder
-from torch_geometric.data import Data
+from torch_geometric.data import Data, data
 from linking.config.config import Config
+from linking.util.encoding import molgym_formula_to_ligand
 from linking.util.eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count, \
     to_rdkit, rdkit_sanitize, qed_score
 from linking.util.plotting import mol_to_svg, mol_to_3d_svg, pos_plot_3D
@@ -29,7 +32,10 @@ class Trainer:
             self.writers[str(a)] = SummaryWriter(logdir + "/" + str(a))
 
         if self.config.coords:
-            self.viewer = PyMol.MolViewer()
+            try:
+                self.viewer = PyMol.MolViewer()
+            except:
+                self.viewer = None
 
 
     def training_epoch(self, epoch) -> float:
@@ -105,7 +111,7 @@ class Trainer:
                 svg_file.write(ligand_svg)
 
             for j in range(self.config.num_eval_generate):
-                pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords)
+                pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords, molgym_eval=self.config.molgym_eval)
 
                 generated_ligand_mol = to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2], pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
@@ -132,7 +138,7 @@ class Trainer:
 
                 generated_ligand_svg = mol_to_svg(generated_ligand_mol)
 
-                if self.config.coords:
+                if self.config.coords and (not self.viewer is None):
                      generated_ligand_png = mol_to_3d_svg(generated_ligand_mol, viewer=self.viewer, pocket_file=x_pocket.name)
                      try:
                         generated_ligand_png.save("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + "_3D.png")
@@ -157,6 +163,42 @@ class Trainer:
             print("Valid ring counts: " + str(ring_count_items/self.config.num_eval_generate))
             print("Valid nhoh counts: " + str(nhoh_count_items/self.config.num_eval_generate))
             print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
+
+        if self.config.molgym_eval:
+            for formula in [Formula('C2H2O2')]:
+                x_pocket = self.X_pocket_train[0]
+                x_ligand = data.Data(
+                    x=molgym_formula_to_ligand(formula, device=x_pocket.x.device),
+                    edge_index=torch.tensor([[0], [0]], device=x_pocket.x.device),
+                    edge_attr=torch.tensor([], device=x_pocket.x.device),
+                    name=x_pocket.protein_name,
+                    protein_name=x_pocket.protein_name,
+                    bfs_index=torch.tensor([], device=x_pocket.x.device),
+                    bfs_attr=torch.tensor([], device=x_pocket.x.device),
+                )
+                protein_name = x_pocket.protein_name
+
+                reward = 0
+
+                for j in range(self.config.num_molgym_eval):
+                    pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords, molgym_eval=self.config.molgym_eval)
+
+                    generated_ligand_mol = to_rdkit(
+                        Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2], pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
+                    generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
+                    generated_ligand_svg = mol_to_svg(generated_ligand_mol)
+
+                    reward += pred_generate[4]
+
+                    with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
+                        svg_file.write(generated_ligand_svg)
+                    if self.config.coords:
+                        file_save_name = "out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
+                        pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
+
+                # self.writers[str(i)].add_scalar('Reward', reward/self.config.num_molgym_eval, epoch)
+
+                print("Rewards: " + str(reward/self.config.num_molgym_eval))
 
     def test(self) -> None:
             total_loss = 0
