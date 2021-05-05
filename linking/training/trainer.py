@@ -25,11 +25,16 @@ class Trainer:
         self.loss_history: Dict[str, float] = {}
         self.auc_history: Dict[str, float] = {}
         self.ap_history: Dict[str, float] = {}
-        logdir = config.logdir + datetime.now().strftime("%Y%m%d-%H%M%S")
+        logdir = config.logdir + ("_gpu/" if torch.cuda.is_available() else "/") + datetime.now().strftime("%Y%m%d-%H%M%S")
         self.general_writer = SummaryWriter(logdir + "/general")
         self.writers = {}
         for a in config.eval_data:
             self.writers[str(a)] = SummaryWriter(logdir + "/" + str(a))
+
+        if self.config.molgym_eval:
+            for f in config.molgym_eval_formulas:
+                self.writers[f] = SummaryWriter(logdir + "/" + f)
+
 
         if self.config.coords:
             try:
@@ -77,6 +82,7 @@ class Trainer:
         return float(total_loss/len(self.X_ligand_train))
 
     def train(self) -> None:
+        self.eval(epoch=0)
         for epoch in range(1, self.config.num_epochs):
             loss = self.training_epoch(epoch=epoch)
             self.loss_history[epoch] = loss
@@ -104,6 +110,8 @@ class Trainer:
             qed_score_count = 0
             qed_score_count_items = 0
 
+            reward = 0
+
             ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr), device=self.model.device)
             ligand_fingerprint = rdkit_fingerprint(ligand_mol)
             ligand_svg = mol_to_svg(ligand_mol)
@@ -111,8 +119,10 @@ class Trainer:
                 svg_file.write(ligand_svg)
 
             for j in range(self.config.num_eval_generate):
-                pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords, molgym_eval=self.config.molgym_eval)
-
+                try:
+                    pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords, molgym_eval=self.config.molgym_eval)
+                except:
+                    raise Exception("Exception in generating: " + x_ligand.name)
                 generated_ligand_mol = to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2], pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
 
@@ -120,6 +130,7 @@ class Trainer:
                 generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
                 generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
                 tanimoto += generated_ligand_tanimoto / self.config.num_eval_generate
+                reward += pred_generate[4]
 
                 nhoh_c = lipinski_nhoh_count(generated_ligand_mol)
                 if not nhoh_c is None:
@@ -154,18 +165,24 @@ class Trainer:
                     pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
                 # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
 
-            self.writers[str(i)].add_scalar('Tanimoto', tanimoto, epoch)
-            self.writers[str(i)].add_scalar('NHOH Count', nhoh_count/nhoh_count_items, epoch)
-            self.writers[str(i)].add_scalar('Ring Count', ring_count/nhoh_count_items, epoch)
-            self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
+            if self.config.num_eval_generate > 0:
+                self.writers[str(i)].add_scalar('Tanimoto', tanimoto, epoch)
+                self.writers[str(i)].add_scalar('NHOH Count', nhoh_count/nhoh_count_items, epoch)
+                self.writers[str(i)].add_scalar('Ring Count', ring_count/ring_count_items, epoch)
+                self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
 
-            print("Valid QED scores: " + str(qed_score_count_items/self.config.num_eval_generate))
-            print("Valid ring counts: " + str(ring_count_items/self.config.num_eval_generate))
-            print("Valid nhoh counts: " + str(nhoh_count_items/self.config.num_eval_generate))
-            print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
+                print("Valid QED scores: " + str(qed_score_count_items/qed_score_count_items))
+                print("Valid ring counts: " + str(ring_count_items/ring_count_items))
+                print("Valid nhoh counts: " + str(nhoh_count_items/nhoh_count_items))
+                print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
+
+                if self.config.molgym_eval:
+                    self.writers[str(i)].add_scalar('Reward', reward/self.config.num_eval_generate, epoch)
+
 
         if self.config.molgym_eval:
-            for formula in [Formula('C2H2O2')]:
+            for formula_string in self.config.molgym_eval_formulas:
+                formula = Formula(formula_string)
                 x_pocket = self.X_pocket_train[0]
                 x_ligand = data.Data(
                     x=molgym_formula_to_ligand(formula, device=x_pocket.x.device),
@@ -196,9 +213,8 @@ class Trainer:
                         file_save_name = "out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
                         pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
 
-                # self.writers[str(i)].add_scalar('Reward', reward/self.config.num_molgym_eval, epoch)
-
-                print("Rewards: " + str(reward/self.config.num_molgym_eval))
+                self.writers[formula_string].add_scalar('Reward', reward/self.config.num_molgym_eval, epoch)
+                print("Reward for " + formula_string + ": " + str(reward/self.config.num_molgym_eval))
 
     def test(self) -> None:
             total_loss = 0

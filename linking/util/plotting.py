@@ -119,6 +119,7 @@ def pos_plot_3D(pos, edge_index, atoms, angle, save_name=None):
         plt.savefig(save_name)
     else:
         plt.show()
+    plt.close()
     return
 
 def torchgeom_plot_3D(graph, angle):

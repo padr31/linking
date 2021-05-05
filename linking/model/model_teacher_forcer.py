@@ -296,7 +296,6 @@ class TeacherForcer(torch.nn.Module):
                 if molgym_eval:
                     _, reward, _, _ = molgym_env.step(to_molgym_action_type(lab_v[v], coord_v[v]))
                     rewards += reward
-                    print(reward)
 
             time = time + torch.tensor(1, device=self.device)
 

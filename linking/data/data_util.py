@@ -57,7 +57,7 @@ def bfs_distance(start, adj):
     '''
     dist = torch.ones_like(adj[0], device=adj.device) * 100
     visited = torch.zeros_like(adj[0], dtype=torch.bool, device=adj.device)
-    q = torch.tensor([start])
+    q = torch.tensor([start], device=adj.device)
 
     visited[start] = True
     dist[start] = 0
