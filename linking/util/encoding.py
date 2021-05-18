@@ -30,7 +30,7 @@ pocket_bond_to_one_hot = {
 
 empty_bond = [0., 0., 0., 0.]
 
-allowable_angles = [71, 60, 1]
+allowable_angles = [71, 60]
 allowable_dihedrals = [180, 120, 60, 0, -60, -120, -180]
 
 def to_one_hot(x, allowable_set=None, mapping=None):

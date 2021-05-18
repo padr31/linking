@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import random
 from typing import Dict
 
 from ase.formula import Formula
@@ -6,9 +8,10 @@ from tqdm import tqdm
 from linking.layers.gcn_encoders import GCNEncoder
 from torch_geometric.data import Data, data
 from linking.config.config import Config
+from linking.util.docking import score
 from linking.util.encoding import molgym_formula_to_ligand
 from linking.util.eval import rdkit_tanimoto, rdkit_fingerprint, lipinski_nhoh_count, lipinski_ring_count, \
-    to_rdkit, rdkit_sanitize, qed_score
+    to_rdkit, rdkit_sanitize, qed_score, tanimoto_score, rdkit_sascore, rdkit_logp
 from linking.util.plotting import mol_to_svg, mol_to_3d_svg, pos_plot_3D
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -30,18 +33,27 @@ class Trainer:
         self.writers = {}
         for a in config.eval_data:
             self.writers[str(a)] = SummaryWriter(logdir + "/" + str(a))
+        self.writers['filtered'] = SummaryWriter(logdir + "/" + 'filtered')
+
+        self.metric_descriptions = {
+            'tanimoto': 'Tanimoto',
+            'nhoh': 'NHOH Count',
+            'ring': 'Ring Count',
+            'qed': 'QED Score',
+            'sascore': 'SAS Score',
+            'logp': 'LogP',
+            'reward': 'Reward',
+        }
 
         if self.config.molgym_eval:
             for f in config.molgym_eval_formulas:
                 self.writers[f] = SummaryWriter(logdir + "/" + f)
-
 
         if self.config.coords:
             try:
                 self.viewer = PyMol.MolViewer()
             except:
                 self.viewer = None
-
 
     def training_epoch(self, epoch) -> float:
         print('Epoch ' + str(epoch))
@@ -55,23 +67,6 @@ class Trainer:
             prediction = self.model(x_pocket, x_ligand, generate=False, coords=self.config.coords)
             loss_f = torch.nn.L1Loss()
             loss = loss_f(-prediction, torch.tensor(0.0))
-            ''' loss for gumbel
-            loss_enc = GCNEncoder(in_channels=self.config.num_allowable_atoms, out_channels=self.config.ligand_encoder_out_channels)
-            prediction = self.model(x_pocket, x_ligand)
-            if i == 0 or i == 1 or i == 2:
-                torchgeom_plot(Data(x=prediction[0], edge_index=prediction[1]))
-            loss_f = torch.nn.MSELoss()
-            indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)
-            x_ligand_x = torch.index_select(x_ligand.x, 1, indices)
-
-            truth = loss_enc(x_ligand_x, x_ligand.edge_index)
-            truth = torch.sum(truth, dim=0)
-
-            pred = loss_enc(prediction[0], prediction[1])
-            pred = torch.sum(pred, dim=0)
-
-            loss = loss_f(pred, truth)
-            '''
             loss.backward()
             if (i + 1) % self.config.batch_size == 0:
                 # every config.batch iterations
@@ -94,6 +89,102 @@ class Trainer:
     def eval(self, epoch):
         self.model.eval()
 
+        # evaluate overall filtered molecules
+        scores = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'sascore': 0, 'logp': 0, 'reward': 0, }
+        filtered_count = 0
+        random_molecules = random.choices(range(len(self.X_ligand_train)), k=self.config.num_eval_filtered)
+        for i in tqdm(random_molecules):
+            x_ligand = self.X_ligand_train[i]
+            x_pocket = self.X_pocket_train[i]
+            protein_name = str(x_ligand.name.split('/')[-1].split('_')[0])
+            prot_path = '/'.join(x_ligand.name.split('/')[:-1]) + '/' + x_ligand.protein_name + '_pocket.pdb'
+            ligand_write_id = str(i) + "_random_ligand_" + protein_name
+
+            # generate ligand
+            try:
+                pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords,
+                                           molgym_eval=self.config.molgym_eval)
+            except:
+                raise Exception("Exception in generating: " + x_ligand.name)
+
+            generated_ligand_mol = to_rdkit(
+                Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2],
+                     pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
+            generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
+
+            ligand_mol = to_rdkit(
+                Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr,
+                     pos=x_ligand.x[:, 1:4]), device=self.model.device)
+            ligand_mol = rdkit_sanitize(ligand_mol)
+
+            # docking
+            if self.config.coords:
+                print(score(generated_ligand_mol, prot_path, "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name, dock=True, embed=True, bounding_box=x_pocket.bounding_box))
+
+            metrics = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'reward': 0, 'sascore':0, 'logp': 0}
+            # metrics to pass filter
+            metrics['tanimoto'] = tanimoto_score(generated_ligand_mol, ligand_mol)
+            if metrics['tanimoto'] is None:
+                continue
+
+            metrics['nhoh'] = lipinski_nhoh_count(generated_ligand_mol)
+            if metrics['nhoh'] is None:
+                continue
+
+            metrics['ring'] = lipinski_ring_count(generated_ligand_mol)
+            if metrics['ring'] is None:
+                continue
+
+            metrics['qed'] = qed_score(generated_ligand_mol)
+            if metrics['qed'] is None:
+                continue
+
+            metrics['sascore'] = rdkit_sascore(generated_ligand_mol)
+            if metrics['sascore'] is None:
+                continue
+
+            metrics['logp'] = rdkit_logp(generated_ligand_mol)
+            if metrics['logp'] is None:
+                continue
+
+            metrics['reward'] = pred_generate[4]
+
+            filtered_count += 1
+            for metric_name in scores.keys():
+                scores[metric_name] += metrics[metric_name]
+
+            # docking - only when filter was passed
+            if self.config.coords:
+                print(score(ligand_mol, prot_path, ligand_write_id, dock=False))
+
+            # performing writeouts and visualisations
+            # ligand svg writeout
+            ligand_svg = mol_to_svg(ligand_mol)
+            with open(self.config.svg_dir + str(epoch) + "ep_" + ligand_write_id + "_lig.svg", "w") as svg_file:
+                svg_file.write(ligand_svg)
+
+            generated_ligand_svg = mol_to_svg(generated_ligand_mol)
+            # generated ligand svg writeout
+            with open(self.config.svg_dir + str(epoch) + "ep_" + ligand_write_id + "_gen.svg" ".svg", "w") as svg_file:
+                svg_file.write(generated_ligand_svg)
+
+            # show in 3D in PyMol if Viewer running
+            if self.config.coords and (not self.viewer is None):
+                generated_ligand_png = mol_to_3d_svg(generated_ligand_mol, viewer=self.viewer,
+                                                     pocket_file=x_pocket.name)
+                try:
+                    generated_ligand_png.save(self.config.svg_dir + str(epoch) + "ep_" + ligand_write_id + "_3D.png")
+                except:
+                    print('error saving png from pymol')
+
+        # log aggregated scores of overall generated ligands
+        if self.config.num_eval_filtered > 0 and filtered_count > 0:
+            for metric_name in scores.keys():
+                self.writers['filtered'].add_scalar(self.metric_descriptions[metric_name], scores[metric_name]/filtered_count, epoch)
+
+            print("Overall metrics (" + str(filtered_count/self.config.num_eval_filtered) + " passed filter) --- tanimoto: " + str(scores['tanimoto']/filtered_count) + " qed: " + str(scores['qed']/filtered_count) + " sascore: " + str(scores['sascore']/filtered_count))
+
+        # evaluate specific molecules
         for i in self.config.eval_data:
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
@@ -112,21 +203,33 @@ class Trainer:
 
             reward = 0
 
-            ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr), device=self.model.device)
+            ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr, pos=x_ligand.x[:, 1:4]), device=self.model.device)
+            ligand_mol = rdkit_sanitize(ligand_mol)
             ligand_fingerprint = rdkit_fingerprint(ligand_mol)
+            prot_path = '/'.join(x_ligand.name.split('/')[:-1]) + '/' + x_ligand.protein_name + '_pocket.pdb'
+
+            # docking
+            if self.config.coords:
+                print(score(ligand_mol, prot_path, "ligand_" + "_" + protein_name, dock=False))
+
+            # ligand svg writeout
             ligand_svg = mol_to_svg(ligand_mol)
-            with open("out_svg/ligand_" + "_" + protein_name + ".svg", "w") as svg_file:
+            with open(self.config.svg_dir + "ligand_" + "_" + protein_name + ".svg", "w") as svg_file:
                 svg_file.write(ligand_svg)
 
+            # generate ligands
             for j in range(self.config.num_eval_generate):
                 try:
                     pred_generate = self.model(x_pocket, x_ligand, generate=True, coords=self.config.coords, molgym_eval=self.config.molgym_eval)
                 except:
                     raise Exception("Exception in generating: " + x_ligand.name)
+
                 generated_ligand_mol = to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2], pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
-
                 generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
+                if self.config.coords:
+                    print(score(generated_ligand_mol, prot_path, "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name, dock=True, embed=True, bounding_box=x_pocket.bounding_box))
+
                 generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
                 generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
                 tanimoto += generated_ligand_tanimoto / self.config.num_eval_generate
@@ -149,31 +252,34 @@ class Trainer:
 
                 generated_ligand_svg = mol_to_svg(generated_ligand_mol)
 
+                # show in 3D in PyMol if Viewer running
                 if self.config.coords and (not self.viewer is None):
                      generated_ligand_png = mol_to_3d_svg(generated_ligand_mol, viewer=self.viewer, pocket_file=x_pocket.name)
                      try:
-                        generated_ligand_png.save("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + "_3D.png")
+                        generated_ligand_png.save(self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + "_3D.png")
                      except:
                          print('error saving png from pymol')
-                with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
-                    svg_file.write(generated_ligand_svg)
-                #with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".png", "w") as png:
-                #    png.write(generated_ligand_png)
 
+                # svg writeout of generated ligand
+                with open(self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
+                    svg_file.write(generated_ligand_svg)
+
+                # save 3D .png (not very useful)
                 if self.config.coords:
-                    file_save_name = "out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
+                    file_save_name = self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
                     pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
                 # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
 
+            # log aggregated scores of ligand i
             if self.config.num_eval_generate > 0:
                 self.writers[str(i)].add_scalar('Tanimoto', tanimoto, epoch)
                 self.writers[str(i)].add_scalar('NHOH Count', nhoh_count/nhoh_count_items, epoch)
                 self.writers[str(i)].add_scalar('Ring Count', ring_count/ring_count_items, epoch)
                 self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
 
-                print("Valid QED scores: " + str(qed_score_count_items/qed_score_count_items))
-                print("Valid ring counts: " + str(ring_count_items/ring_count_items))
-                print("Valid nhoh counts: " + str(nhoh_count_items/nhoh_count_items))
+                # print("Valid QED scores: " + str(qed_score_count_items/qed_score_count_items))
+                # print("Valid ring counts: " + str(ring_count_items/ring_count_items))
+                # print("Valid nhoh counts: " + str(nhoh_count_items/nhoh_count_items))
                 print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
 
                 if self.config.molgym_eval:
@@ -207,10 +313,10 @@ class Trainer:
 
                     reward += pred_generate[4]
 
-                    with open("out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
+                    with open(self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
                         svg_file.write(generated_ligand_svg)
                     if self.config.coords:
-                        file_save_name = "out_svg/generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
+                        file_save_name = self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
                         pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
 
                 self.writers[formula_string].add_scalar('Reward', reward/self.config.num_molgym_eval, epoch)
@@ -230,17 +336,6 @@ class Trainer:
 
                     #torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
                     loss_f = torch.nn.L1Loss()
-                    '''
-                    gumbel loss
-                    indices = torch.tensor(list(range(4, x_ligand.x.size()[1])), dtype=torch.long)
-                    x_ligand_x = torch.index_select(x_ligand.x, 1, indices)
-
-                    truth = loss_enc(x_ligand_x, x_ligand.edge_index)
-                    truth = torch.sum(truth, dim=0)
-
-                    pred = loss_enc(prediction[0], prediction[1])
-                    pred = torch.sum(pred, dim=0)
-                    '''
 
                     loss = loss_f(prediction, torch.tensor(0.0))
                 total_loss += loss

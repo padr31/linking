@@ -187,6 +187,28 @@ def mol2_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein
     geom_graph.bfs_index, geom_graph.bfs_attr = bfs(geom_graph)
     return geom_graph
 
+def get_bounding_box(geom_graph_ligand):
+    c_x, c_y, c_z = 0.0, 0.0, 0.0
+    min_x, min_y, min_z = float('inf'), float('inf'), float('inf')
+    max_x, max_y, max_z = float('-inf'), float('-inf'), float('-inf')
+    for coord in geom_graph_ligand.x[:,1:4]:
+        x, y, z = coord
+        c_x += x
+        c_y += y
+        c_z += z
+        min_x = min_x if x >= min_x else x
+        max_x = max_x if x <= max_x else x
+        min_y = min_y if y >= min_y else y
+        max_y = max_y if y <= max_y else y
+        min_z = min_z if z >= min_z else z
+        max_z = max_z if z <= max_z else z
+
+    coord_count = geom_graph_ligand.x.size()[0]
+    assert max_x > min_x
+    assert max_y > min_y
+    assert max_z > min_z
+    return c_x/coord_count, c_y/coord_count, c_z/coord_count, (max_x - min_x), (max_y - min_y), (max_z - min_z)
+
 def mol2_file_to_dgl(path):
     nxg = mol2_file_to_networkx(path)
     g = dgl.DGLGraph()
@@ -195,7 +217,7 @@ def mol2_file_to_dgl(path):
     )
     return g
 
-def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_name=None):
+def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_name=None, bounding_box=None):
     mol = Chem.MolFromPDBFile(path)
 
     # TODO: add hydrogens?
@@ -246,7 +268,8 @@ def pdb_file_to_torch_geometric(path, allowable_atoms, bond_to_one_hot, protein_
         edge_index=torch.tensor([edge_src, edge_dst], dtype=torch.long).contiguous(),
         edge_attr=torch.tensor(edge_types, dtype=torch.float).contiguous(),
         name=path,
-        protein_name=protein_name
+        protein_name=protein_name,
+        bounding_box=bounding_box,
     )
 
     return geom_graph

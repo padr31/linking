@@ -1,7 +1,7 @@
 from __future__ import annotations
 from torch import nn
 from linking.config.config import Config
-from linking.layers.gcn_encoders import GCNEncoder, CGCEncoder, GATEncoder, VariationalGATEncoder
+from linking.layers.gcn_encoders import GCNEncoder, CGCEncoder, GATEncoder, VariationalGATEncoder, VariationalGCNEncoder
 from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeClassifier, LinearEdgeSelector, \
     MLP, LinearEdgeRowClassifier
@@ -22,11 +22,13 @@ def build_model(config: Config, device):
 def build_forcer_model(config: Config, device) -> nn.Module:
     pocket_encoder = GCNEncoder(
         in_channels=config.pocket_encoder_in_channels, out_channels=config.pocket_encoder_out_channels)
-    ligand_encoder = GCNEncoder(
+
+    ligand_encoder = VariationalGCNEncoder(
         in_channels=config.ligand_encoder_in_channels, out_channels=config.ligand_encoder_out_channels)
     graph_encoder = GCNEncoder(
         in_channels=config.num_allowable_atoms+config.ligand_encoder_out_channels, out_channels=config.num_allowable_atoms+config.ligand_encoder_out_channels
     )
+
     linear_atom_classifier = LinearAtomClassifier(in_channels=config.ligand_encoder_out_channels, out_channels=config.num_allowable_atoms)
 
     # [t, z_pocket, z_u, l_u, z_v, l_v, d, H_t, H_init]

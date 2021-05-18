@@ -1,6 +1,6 @@
 from linking.config.config import Config
 from linking.data.data_util import bfs_distance
-from linking.layers.gcn_encoders import GCNEncoder
+from linking.layers.gcn_encoders import GCNEncoder, VariationalGCNEncoder
 from linking.layers.geom_encoders import Sch
 from linking.layers.linear_encoders import LinearAtomClassifier, LinearEdgeSelector, \
     LinearEdgeRowClassifier
@@ -12,12 +12,14 @@ from linking.util.coords import calc_position, calc_angle, calc_dihedral, \
 import torch
 import numpy as np
 from linking.util.eval import construct_molgym_environment
+from torch.distributions import Normal
+import torch.nn.functional as F
 
 
 class TeacherForcer(torch.nn.Module):
     def __init__(self,
                  pocket_encoder: GCNEncoder,
-                 ligand_encoder: GCNEncoder,
+                 ligand_encoder: VariationalGCNEncoder,
                  g_dec: GCNEncoder,
                  f: LinearAtomClassifier,
                  g: LinearEdgeSelector,
@@ -133,7 +135,17 @@ class TeacherForcer(torch.nn.Module):
         z_pocket = torch.mean(z_pocket_atoms, dim=0)
 
         # ligand
-        z_ligand_atoms = self.ligand_encoder(x_l, edge_index_l, None) # if not generate else torch.normal(0, 1, size=(x_l.size(0), self.config.ligand_encoder_out_channels))
+
+        z_ligand_atoms_mu, z_ligand_atoms_logvar = self.ligand_encoder(x_l, edge_index_l, None)
+        q = Normal(z_ligand_atoms_mu, 0.1 + F.softplus(z_ligand_atoms_logvar))
+        z_ligand_atoms = q.rsample()
+
+        KL = torch.tensor(0.0, device=self.device)
+        KL += torch.distributions.kl_divergence(
+            Normal(torch.zeros_like(z_ligand_atoms_mu), torch.ones_like(z_ligand_atoms_logvar)),
+            q).mean()
+
+        #z_ligand_atoms = self.ligand_encoder(x_l, edge_index_l, edge_attr_l)  # if not generate else torch.normal(0, 1, size=(x_l.size(0), self.config.ligand_encoder_out_channels))
         z_ligand = torch.mean(z_ligand_atoms, dim=0)
         z_v = z_ligand_atoms
 
@@ -144,9 +156,9 @@ class TeacherForcer(torch.nn.Module):
             log_prob += torch.sum(torch.log(torch.sum(lab_v * x_l[:, 4:], dim=1)))
             lab_v = x_l[:, 4:]
 
-        # just for testing
-        if generate:
-            lab_v = x_l[:, 4:]
+        #  just for testing
+        #if generate:
+        #    lab_v = x_l[:, 4:]
 
         if molgym_eval:
             molgym_env = construct_molgym_environment(lab_v.size()[0], [ligand_to_molgym_formula(lab_v)])
@@ -299,7 +311,7 @@ class TeacherForcer(torch.nn.Module):
 
             time = time + torch.tensor(1, device=self.device)
 
-        return (lab_v, edge_index, edge_attr, coord_v, rewards) if generate else (log_prob + log_prob_coords if coords else log_prob)
+        return (lab_v, edge_index, edge_attr, coord_v, rewards) if generate else (log_prob + log_prob_coords + KL if coords else log_prob + KL)
 
     def parameters(self):
        return [
@@ -307,6 +319,8 @@ class TeacherForcer(torch.nn.Module):
             dict(params=self.pocket_encoder.conv2.parameters(), weight_decay=0),
             dict(params=self.ligand_encoder.conv1.parameters(), weight_decay=5e-4),
             dict(params=self.ligand_encoder.conv2.parameters(), weight_decay=0),
+            dict(params=self.ligand_encoder.conv_mu.parameters(), weight_decay=0),
+            dict(params=self.ligand_encoder.conv_logvar.parameters(), weight_decay=0),
             dict(params=self.g_dec.conv1.parameters(), weight_decay=5e-4),
             dict(params=self.g_dec.conv2.parameters(), weight_decay=0),
             dict(params=self.f.linear.parameters()),

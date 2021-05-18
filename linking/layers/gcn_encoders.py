@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Tuple
 from torch_geometric.nn import GCNConv, GATConv, GatedGraphConv, CGConv
 import torch
 
@@ -21,7 +20,7 @@ class CGCEncoder(torch.nn.Module):
         x = self.conv1(x, edge_index, edge_attr).relu()
         for i in range(self.hidden_layers):
            x = self.conv2(x, edge_index, edge_attr).relu()
-        return self.conv3(x, edge_index, edge_attr).softmax(dim=1)
+        return self.conv2(x, edge_index, edge_attr)
 
 class GATEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int, hidden_layers: int):
@@ -69,12 +68,6 @@ class VariationalGATEncoder(torch.nn.Module):
 class GCNEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super(GCNEncoder, self).__init__()
-        '''self.conv1 = GATConv(
-            in_channels, 2 * out_channels, add_self_loops=False
-        )
-        self.conv2 = GATConv(
-            2 * out_channels, out_channels, add_self_loops=False
-        )'''
         self.conv1 = GatedGraphConv(
             out_channels, 2
         )
@@ -87,3 +80,25 @@ class GCNEncoder(torch.nn.Module):
         for i in range(7):
             x = self.conv2(x, edge_index, edge_attr).relu()
         return self.conv2(x, edge_index, edge_attr)
+
+class VariationalGCNEncoder(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super(VariationalGCNEncoder, self).__init__()
+        self.conv1 = GatedGraphConv(
+            out_channels, 2
+        )
+        self.conv2 = GatedGraphConv(
+            out_channels, 2
+        )
+        self.conv_mu = GatedGraphConv(
+            out_channels, 2
+        )
+        self.conv_logvar = GatedGraphConv(
+            out_channels, 2
+        )
+
+    def forward(self, x, edge_index, edge_attr) -> (torch.Tensor, torch.Tensor):
+        x = self.conv1(x, edge_index, edge_attr).relu()
+        for i in range(7):
+            x = self.conv2(x, edge_index, edge_attr).relu()
+        return self.conv_mu(x, edge_index, edge_attr), self.conv_logvar(x, edge_index, edge_attr)

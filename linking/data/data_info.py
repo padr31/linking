@@ -1,14 +1,22 @@
 # Getting information about the type of data we are dealing with
 from rdkit.Chem import rdmolops
 from rdkit import Chem
+from torch_geometric.data import Data
+from tqdm import tqdm
+
 from linking.data.data_util import parse_mol2_bonds
-from linking.util.encoding import to_atom, to_bond_index
+from linking.data.torchgeom_dude_loader import DudeLigandDataset
+from linking.util.encoding import to_atom, to_bond_index, to_angle, encode_angle, to_dihedral, encode_dihedral
 from linking.util.coords import calc_angle, calc_dihedral, calc_position, calc_angle_p, calc_dihedral_p
 from linking.data.torchgeom_pdb_loader import PDBLigandDataset
 import os
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+
+from linking.util.eval import to_rdkit
+from linking.util.plotting import mol_to_svg
+
 
 def mol_with_atom_index(mol):
     for atom in mol.GetAtoms():
@@ -20,15 +28,16 @@ def get_components(mol):
     largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
     return len(mol_frags), len(largest_mol.GetAtoms())
 
-bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
 files_to_process = []
-for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/raw/refined-set'):
-    for file in files:
-        if not (file.endswith('_ligand.mol2') or file.endswith('_ligand.sdf') or file.endswith('_pocket.pdb') or file.endswith('_protein.pdb')):
-            print(file)
-        if file.endswith('ligand.mol2') and not file.split("_")[0] in bad_data:
-            full_path = path + os.sep + file
-            files_to_process.append(full_path)
+def get_files_to_process():
+    bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
+    for path, dirs, files in os.walk('/Users/padr/repos/linking/datasets/raw/refined-set'):
+        for file in files:
+            if not (file.endswith('_ligand.mol2') or file.endswith('_ligand.sdf') or file.endswith('_pocket.pdb') or file.endswith('_protein.pdb')):
+                print(file)
+            if file.endswith('ligand.mol2') and not file.split("_")[0] in bad_data:
+                full_path = path + os.sep + file
+                files_to_process.append(full_path)
 
 def getAtomTypes():
     total = len(files_to_process)
@@ -76,10 +85,86 @@ def getBondTypes():
     print("Set of bond types:")
     print(bonds)
 
+def getAtomCounts(dataset):
+    atoms = {}
+    atom_count = 0
+    mol_count = 0
+    for data in tqdm(dataset):
+        mol_count += 1
+        for atom in data.x:
+            atom = to_atom(atom[4:])
+            atom_count += 1
+            if atom in atoms:
+                atoms[atom] += 1
+            else:
+                atoms[atom] = 1
+    for k,v in atoms.items():
+        atoms[k] = v/mol_count
+    print(atoms)
+    print(atom_count)
+    print(mol_count)
 
-def getBfsAngleTypes():
-    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
+def getBondCounts(dataset):
+    bonds = {}
+    bond_count = 0
+    mol_count = 0
 
+    for data in tqdm(dataset):
+        mol_count += 1
+        for attr in data.edge_attr:
+            bond = to_bond_index(attr)
+            bond_count += 1
+            if bond in bonds:
+                bonds[bond] += 1
+            else:
+                bonds[bond] = 1
+    for k,v in bonds.items():
+        bonds[k] = v/mol_count
+    print(bonds)
+    print(bond_count)
+    print(mol_count)
+
+from rdkit.Chem.Lipinski import RingCount
+
+def getRingCounts(dataset):
+    rings = {}
+    ring_count = 0
+    mol_count = 0
+
+    for data in tqdm(dataset):
+        mol_count += 1
+        rdkit_mol = to_rdkit(Data(x=data.x[:, 4:], edge_index=data.edge_index, edge_attr=data.edge_attr))
+        # rdkit_mol.UpdatePropertyCache()
+        Chem.GetSymmSSSR(rdkit_mol)
+
+        ligand_svg = mol_to_svg(rdkit_mol)
+
+        with open("./out_svg/ligand_" + data.protein_name + ".svg", "w") as svg_file:
+            svg_file.write(ligand_svg)
+
+        rings_list = rdkit_mol.GetRingInfo().AtomRings()
+        ring_count += RingCount(rdkit_mol)
+        for r in rings_list:
+            ring_type = str(len(r))
+            if ring_type in rings:
+                rings[ring_type] += 1
+            else:
+                rings[ring_type] = 1
+
+    for k, v in rings.items():
+        rings[k] = v / mol_count
+
+    others = 0
+    for k, v in rings.items():
+        if int(k) > 7:
+            others += v
+    rings['>7'] = others
+
+    print(rings)
+    print(ring_count)
+    print(mol_count)
+
+def getBfsAngleTypes(dataset):
     Q = []    # returns true if new things were added, i.e. we have new angles to calculate
     def qpush(edge):
         if (edge[0] == -1 or edge[1] == -1): # stop edge
@@ -95,7 +180,7 @@ def getBfsAngleTypes():
     dyhedrals = {'0': 0}
     nan_count = 0
 
-    for data in d:
+    for data in dataset:
         def edge_vec(edge):
             return data.x[edge[1]][1:4].numpy() - data.x[edge[0]][1:4].numpy()
 
@@ -149,21 +234,20 @@ def getBfsAngleTypes():
     print('Nan count:')
     print(nan_count)
 
-def getPointAngleTypes():
-    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
-
+def getPointAngleTypes(dataset):
     angles = {'0': 0}
     dihedrals = {'0': 0}
     nan_count = 0
+    num_mols = 0
 
     def min_dist_points(p, coords):
         sorted_c = sorted(enumerate(coords), key=lambda t: np.linalg.norm(p-t[1]))
         return coords[sorted_c[2][0]], coords[sorted_c[1][0]]
 
-    for data in d:
+    for data in tqdm(dataset):
+        num_mols += 1
         coords = np.ones((data.x.size(0), 3))
         coords[data.bfs_index[0][0]] = data.x[data.bfs_index[0][0], 1:4]
-        print("Pocessing " + str(data.name))
         for i in range(0, len(data.bfs_index)):
             from_i = data.bfs_index[i][0]
             to_i = data.bfs_index[i][1]
@@ -171,22 +255,31 @@ def getPointAngleTypes():
                 continue
             to_c = data.x[to_i, 1:4]
             if np.linalg.norm(coords[to_i]-to_c.numpy()) == 0.0:
-                print('exists')
                 continue
-            min_dist_p = min_dist_points(coords[from_i], coords)
-            angle = (calc_angle_p(min_dist_p[1], coords[from_i], to_c)/np.pi)*180
-            dihedral = (calc_dihedral_p(min_dist_p[0], min_dist_p[1], coords[from_i], to_c)/np.pi)*180
+            try:
+                min_dist_p = min_dist_points(coords[from_i], coords)
+            except:
+                print('not enough points to get angle')
+                continue
+            angle = to_angle(encode_angle(calc_angle_p(min_dist_p[1], coords[from_i], to_c)))
+            dihedral = to_dihedral(encode_dihedral(calc_dihedral_p(min_dist_p[0], min_dist_p[1], coords[from_i], to_c)))
             coords[to_i] = to_c
-            if str(angle // 1) in angles:
-                angles[str(angle//1)] += 1
+            if str(angle) in angles:
+                angles[str(angle)] += 1
             else:
-                angles[str(angle//1)] = 0
+                angles[str(angle)] = 1
             if math.isnan(dihedral):
                 print('none')
-            if str(dihedral // 1) in dihedrals:
-                dihedrals[str(dihedral // 1)] += 1
+            if str(dihedral) in dihedrals:
+                dihedrals[str(dihedral)] += 1
             else:
-                dihedrals[str(dihedral // 1)] = 0
+                dihedrals[str(dihedral)] = 1
+
+    for k, v in angles.items():
+        angles[k] = v/num_mols
+
+    for k, v in dihedrals.items():
+        dihedrals[k] = v/num_mols
 
     for dic in [angles, dihedrals]:
         dic = {k: v for k, v in dic.items() if v > 1000}
@@ -201,13 +294,13 @@ def getPointAngleTypes():
     print(angles)
     print("Set of dyhedral angle types:")
     print(dihedrals)
+    print(num_mols)
 
-def getDistanceTypes():
-    d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
+def getDistanceTypes(dataset):
 
     distances = {}
 
-    for data in d:
+    for data in dataset:
         def edge_vec(edge):
             return data.x[edge[1]][1:4].numpy() - data.x[edge[0]][1:4].numpy()
 
@@ -227,11 +320,15 @@ def getDistanceTypes():
             if not key in distances:
                 distances[key] = []
             distances[key].append(dist)
-
     print("{")
     for key in distances:
         arr = np.array(distances[key])
         print('"' + key + '":' + str(np.mean(arr)) + ",")
         # print(key + " num: " + str(len(arr)) + ", mean-length: " + str(np.mean(arr)) + ", std: " + str(np.std(arr)))
     print("}")
-getPointAngleTypes()
+
+d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/dude")
+#getAtomCounts(d)
+#getBondCounts(d)
+#getRingCounts(d)
+getPointAngleTypes(d)

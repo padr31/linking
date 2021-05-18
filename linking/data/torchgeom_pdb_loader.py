@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import torch
 from torch_geometric.data import InMemoryDataset
-from linking.data.data_util import pdb_file_to_torch_geometric, mol2_file_to_torch_geometric
+from linking.data.data_util import pdb_file_to_torch_geometric, mol2_file_to_torch_geometric, get_bounding_box
 from linking.util.encoding import allowable_atoms, ligand_bond_to_one_hot, pocket_bond_to_one_hot
 
 bad_data = ["1g7v", "1r1h", "2a5b", "2zjw", "1cps", "4abd"]
@@ -85,7 +85,10 @@ class PDBPocketDataset(InMemoryDataset):
                 "(" + str(int(100 * i / total)) + "%) Processing " + os.path.basename(path)
             )
             protein_name = path.split('/')[-2]
-            g = pdb_file_to_torch_geometric(path, allowable_atoms, pocket_bond_to_one_hot, protein_name)
+            ligand_path = '/'.join(path.split('/')[:-1]) + '/' + protein_name + '_ligand.mol2'
+            lig = mol2_file_to_torch_geometric(ligand_path, allowable_atoms, ligand_bond_to_one_hot, protein_name, self.config.remove_hydrogens)
+
+            g = pdb_file_to_torch_geometric(path, allowable_atoms, pocket_bond_to_one_hot, protein_name, bounding_box=get_bounding_box(lig))
             # torchgeom_plot_3D(g, 90)
             graphs.append(g)
 
