@@ -3,15 +3,15 @@ from pydantic import BaseModel
 class Config(BaseModel):
     # Core stuff
     root_dir: str = "./"
-    dataset: str = "pdb"
+    dataset: str = "dude"
     dataset_root: str = "./datasets/"
     dataset_root_pdb: str = "./datasets/pdb/"
     dataset_root_dude: str = "./datasets/dude/"
     save_model: str = "./out_model/"
     logdir: str = "./out_logdir"
     logdir_qed: str = "./out_logdir_qed/"
-    svg_dir: str = "./out_svg/"
-    num_epochs: int = 20
+    svg_dir: str = "./out_svg_dude/"
+    num_epochs: int = 12
     learning_rate: float = 0.003  # 0.003 best
 
     # Data stuff
@@ -26,7 +26,7 @@ class Config(BaseModel):
     molgym_eval_formulas: list = ['C2H2O2', 'CH3NO', 'CH4O', 'C3H5NO3', 'C4H7N', 'C3H8O', 'C7H8N2O2']
 
     # Model stuff
-    num_train: int = 1024
+    num_train: int = 2048
     num_test: int = 16
     train_test_ratio: int = 10
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"

@@ -14,7 +14,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-from linking.util.eval import to_rdkit
+from linking.util.eval import to_rdkit, lipinski_nhoh_count, rdkit_sanitize, rdkit_sascore, rdkit_logp, qed_score
 from linking.util.plotting import mol_to_svg
 
 
@@ -137,10 +137,10 @@ def getRingCounts(dataset):
         # rdkit_mol.UpdatePropertyCache()
         Chem.GetSymmSSSR(rdkit_mol)
 
-        ligand_svg = mol_to_svg(rdkit_mol)
+        #ligand_svg = mol_to_svg(rdkit_mol)
 
-        with open("./out_svg/ligand_" + data.protein_name + ".svg", "w") as svg_file:
-            svg_file.write(ligand_svg)
+        #with open("./out_svg/ligand_" + data.protein_name + ".svg", "w") as svg_file:
+        #    svg_file.write(ligand_svg)
 
         rings_list = rdkit_mol.GetRingInfo().AtomRings()
         ring_count += RingCount(rdkit_mol)
@@ -161,8 +161,102 @@ def getRingCounts(dataset):
     rings['>7'] = others
 
     print(rings)
-    print(ring_count)
+    print(ring_count/mol_count)
     print(mol_count)
+
+def getNoohCounts(dataset):
+    nooh_count = 0
+    mol_count = 0
+
+    for data in tqdm(dataset):
+        rdkit_mol = to_rdkit(Data(x=data.x[:, 4:], edge_index=data.edge_index, edge_attr=data.edge_attr))
+        rdkit_mol = rdkit_sanitize(rdkit_mol)
+        # rdkit_mol.UpdatePropertyCache()
+        # Chem.GetSymmSSSR(rdkit_mol)
+        nooh = lipinski_nhoh_count(rdkit_mol)
+        if not nooh is None:
+            mol_count += 1
+            nooh_count += nooh
+
+    print(nooh_count/mol_count)
+
+def getNoohCounts(dataset):
+    nooh_count = 0
+    mol_count = 0
+
+    for data in tqdm(dataset):
+        rdkit_mol = to_rdkit(Data(x=data.x[:, 4:], edge_index=data.edge_index, edge_attr=data.edge_attr))
+        rdkit_mol = rdkit_sanitize(rdkit_mol)
+        # rdkit_mol.UpdatePropertyCache()
+        # Chem.GetSymmSSSR(rdkit_mol)
+        nooh = lipinski_nhoh_count(rdkit_mol)
+        if not nooh is None:
+            mol_count += 1
+            nooh_count += nooh
+
+    print(nooh_count/mol_count)
+
+def getSasCounts(dataset):
+    sas_count = 0
+    mol_count = 0
+    invalid = 0
+
+    for data in tqdm(dataset):
+        rdkit_mol = to_rdkit(Data(x=data.x[:, 4:], edge_index=data.edge_index, edge_attr=data.edge_attr))
+        rdkit_mol = rdkit_sanitize(rdkit_mol)
+        # rdkit_mol.UpdatePropertyCache()
+        # Chem.GetSymmSSSR(rdkit_mol)
+        try:
+            sas = rdkit_sascore(rdkit_mol)
+        except:
+            invalid +=1
+        if not sas is None:
+            mol_count += 1
+            sas_count += sas
+
+    print(sas_count / mol_count)
+    print(invalid)
+
+def getLogPCounts(dataset):
+    logp_count = 0
+    mol_count = 0
+    invalid = 0
+    for data in tqdm(dataset):
+        rdkit_mol = to_rdkit(Data(x=data.x[:, 4:], edge_index=data.edge_index, edge_attr=data.edge_attr))
+        rdkit_mol = rdkit_sanitize(rdkit_mol)
+        # rdkit_mol.UpdatePropertyCache()
+        # Chem.GetSymmSSSR(rdkit_mol)
+        try:
+            logp = rdkit_logp(rdkit_mol)
+        except:
+            invalid +=1
+        if not logp is None:
+            mol_count += 1
+            logp_count += logp
+
+    print(logp_count / mol_count)
+    print(invalid)
+
+def getQEDCounts(dataset):
+    qed_count = 0
+    mol_count = 0
+    invalid = 0
+    for data in tqdm(dataset):
+        rdkit_mol = to_rdkit(Data(x=data.x[:, 4:], edge_index=data.edge_index, edge_attr=data.edge_attr))
+        rdkit_mol = rdkit_sanitize(rdkit_mol)
+        # rdkit_mol.UpdatePropertyCache()
+        # Chem.GetSymmSSSR(rdkit_mol)
+        try:
+            qed = qed_score(rdkit_mol)
+        except:
+            invalid +=1
+        if not qed is None:
+            mol_count += 1
+            qed_count += qed
+
+    print(qed_count / mol_count)
+    print(invalid)
+
 
 def getBfsAngleTypes(dataset):
     Q = []    # returns true if new things were added, i.e. we have new angles to calculate
@@ -327,8 +421,12 @@ def getDistanceTypes(dataset):
         # print(key + " num: " + str(len(arr)) + ", mean-length: " + str(np.mean(arr)) + ", std: " + str(np.std(arr)))
     print("}")
 
-d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/dude")
+d = PDBLigandDataset(root="/Users/padr/repos/linking/datasets/pdb")
 #getAtomCounts(d)
 #getBondCounts(d)
-#getRingCounts(d)
-getPointAngleTypes(d)
+getRingCounts(d)
+getNoohCounts(d)
+getSasCounts(d)
+getLogPCounts(d)
+getQEDCounts(d)
+#getPointAngleTypes(d)

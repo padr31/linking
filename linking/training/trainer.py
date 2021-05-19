@@ -77,7 +77,7 @@ class Trainer:
         return float(total_loss/len(self.X_ligand_train))
 
     def train(self) -> None:
-        self.eval(epoch=0)
+        #self.eval(epoch=0)
         for epoch in range(1, self.config.num_epochs):
             loss = self.training_epoch(epoch=epoch)
             self.loss_history[epoch] = loss
@@ -117,10 +117,6 @@ class Trainer:
                      pos=x_ligand.x[:, 1:4]), device=self.model.device)
             ligand_mol = rdkit_sanitize(ligand_mol)
 
-            # docking
-            if self.config.coords:
-                print(score(generated_ligand_mol, prot_path, "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name, dock=True, embed=True, bounding_box=x_pocket.bounding_box))
-
             metrics = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'reward': 0, 'sascore':0, 'logp': 0}
             # metrics to pass filter
             metrics['tanimoto'] = tanimoto_score(generated_ligand_mol, ligand_mol)
@@ -155,7 +151,10 @@ class Trainer:
 
             # docking - only when filter was passed
             if self.config.coords:
-                print(score(ligand_mol, prot_path, ligand_write_id, dock=False))
+                print(score(ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_lig', dock=False))
+            if self.config.coords:
+                print(score(generated_ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_gen', dock=True, embed=True,
+                          bounding_box=x_pocket.bounding_box))
 
             # performing writeouts and visualisations
             # ligand svg writeout
@@ -165,7 +164,7 @@ class Trainer:
 
             generated_ligand_svg = mol_to_svg(generated_ligand_mol)
             # generated ligand svg writeout
-            with open(self.config.svg_dir + str(epoch) + "ep_" + ligand_write_id + "_gen.svg" ".svg", "w") as svg_file:
+            with open(self.config.svg_dir + str(epoch) + "ep_" + ligand_write_id + "_gen.svg", "w") as svg_file:
                 svg_file.write(generated_ligand_svg)
 
             # show in 3D in PyMol if Viewer running
@@ -200,6 +199,12 @@ class Trainer:
 
             qed_score_count = 0
             qed_score_count_items = 0
+
+            sascore_count = 0
+            sascore_count_items = 0
+
+            logp_count = 0
+            logp_count_items = 0
 
             reward = 0
 
@@ -250,6 +255,16 @@ class Trainer:
                     qed_score_count += qed_s
                     qed_score_count_items += 1
 
+                sascore_s = rdkit_sascore(generated_ligand_mol)
+                if not sascore_s is None:
+                    sascore_count += sascore_s
+                    sascore_count_items += 1
+
+                logp_s = rdkit_logp(generated_ligand_mol)
+                if not logp_s is None:
+                    logp_count += logp_s
+                    logp_count_items += 1
+
                 generated_ligand_svg = mol_to_svg(generated_ligand_mol)
 
                 # show in 3D in PyMol if Viewer running
@@ -276,6 +291,8 @@ class Trainer:
                 self.writers[str(i)].add_scalar('NHOH Count', nhoh_count/nhoh_count_items, epoch)
                 self.writers[str(i)].add_scalar('Ring Count', ring_count/ring_count_items, epoch)
                 self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
+                self.writers[str(i)].add_scalar('LogP', logp_count/logp_count_items, epoch)
+                self.writers[str(i)].add_scalar('SAS Score', sascore_count/sascore_count_items, epoch)
 
                 # print("Valid QED scores: " + str(qed_score_count_items/qed_score_count_items))
                 # print("Valid ring counts: " + str(ring_count_items/ring_count_items))
