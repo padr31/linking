@@ -86,7 +86,7 @@ def rdkit_sascore(m):
         global _fscores
         import gzip
         # generate the full path filename:
-        data = pickle.load(gzip.open('/Users/padr/repos/linking/datasets/fpscores.pkl.gz'))
+        data = pickle.load(gzip.open('./datasets/fpscores.pkl.gz'))
         outDict = {}
         for i in data:
             for j in range(1, len(i)):

@@ -157,7 +157,7 @@ class TeacherForcer(torch.nn.Module):
             lab_v = x_l[:, 4:]
 
         #  just for testing
-        #if generate:
+        # if generate:
         #    lab_v = x_l[:, 4:]
 
         if molgym_eval:

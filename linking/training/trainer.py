@@ -43,6 +43,7 @@ class Trainer:
             'sascore': 'SAS Score',
             'logp': 'LogP',
             'reward': 'Reward',
+            'docking': 'Docking',
         }
 
         if self.config.molgym_eval:
@@ -77,7 +78,7 @@ class Trainer:
         return float(total_loss/len(self.X_ligand_train))
 
     def train(self) -> None:
-        #self.eval(epoch=0)
+        # self.eval(epoch=0)
         for epoch in range(1, self.config.num_epochs):
             loss = self.training_epoch(epoch=epoch)
             self.loss_history[epoch] = loss
@@ -90,7 +91,7 @@ class Trainer:
         self.model.eval()
 
         # evaluate overall filtered molecules
-        scores = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'sascore': 0, 'logp': 0, 'reward': 0, }
+        scores = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'sascore': 0, 'logp': 0, 'reward': 0, 'docking': 0}
         filtered_count = 0
         random_molecules = random.choices(range(len(self.X_ligand_train)), k=self.config.num_eval_filtered)
         for i in tqdm(random_molecules):
@@ -117,7 +118,7 @@ class Trainer:
                      pos=x_ligand.x[:, 1:4]), device=self.model.device)
             ligand_mol = rdkit_sanitize(ligand_mol)
 
-            metrics = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'reward': 0, 'sascore':0, 'logp': 0}
+            metrics = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'reward': 0, 'sascore':0, 'logp': 0, 'docking': 0}
             # metrics to pass filter
             metrics['tanimoto'] = tanimoto_score(generated_ligand_mol, ligand_mol)
             if metrics['tanimoto'] is None:
@@ -145,16 +146,18 @@ class Trainer:
 
             metrics['reward'] = pred_generate[4]
 
+            # docking - only when filter was passed
+            if self.config.coords and self.config.dock_eval:
+                # print(score(ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_lig', dock=False))
+                d_score = score(generated_ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_gen', dock=True, embed=True,
+                          bounding_box=x_pocket.bounding_box)
+                metrics['docking'] = d_score
+                if metrics['docking'] is None:
+                    continue
+
             filtered_count += 1
             for metric_name in scores.keys():
                 scores[metric_name] += metrics[metric_name]
-
-            # docking - only when filter was passed
-            if self.config.coords:
-                print(score(ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_lig', dock=False))
-            if self.config.coords:
-                print(score(generated_ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_gen', dock=True, embed=True,
-                          bounding_box=x_pocket.bounding_box))
 
             # performing writeouts and visualisations
             # ligand svg writeout
@@ -208,14 +211,17 @@ class Trainer:
 
             reward = 0
 
+            docking = 0
+            docking_items = 0
+
             ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr, pos=x_ligand.x[:, 1:4]), device=self.model.device)
             ligand_mol = rdkit_sanitize(ligand_mol)
             ligand_fingerprint = rdkit_fingerprint(ligand_mol)
             prot_path = '/'.join(x_ligand.name.split('/')[:-1]) + '/' + x_ligand.protein_name + '_pocket.pdb'
 
-            # docking
-            if self.config.coords:
-                print(score(ligand_mol, prot_path, "ligand_" + "_" + protein_name, dock=False))
+            # docking ligand - we don't need it necessarily
+            # if self.config.coords and self.config.dock_eval:
+            #    print(score(ligand_mol, prot_path, "ligand_" + "_" + protein_name, dock=False))
 
             # ligand svg writeout
             ligand_svg = mol_to_svg(ligand_mol)
@@ -232,8 +238,14 @@ class Trainer:
                 generated_ligand_mol = to_rdkit(
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2], pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
                 generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
-                if self.config.coords:
-                    print(score(generated_ligand_mol, prot_path, "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name, dock=True, embed=True, bounding_box=x_pocket.bounding_box))
+
+                # docking
+                if self.config.coords and self.config.dock_eval:
+                    docking_s = score(generated_ligand_mol, prot_path, "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name, dock=True, embed=True, bounding_box=x_pocket.bounding_box)
+                    print(docking_s)
+                    if not docking_s is None:
+                        docking += docking_s
+                        docking_items += 1
 
                 generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
                 generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
@@ -293,6 +305,7 @@ class Trainer:
                 self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
                 self.writers[str(i)].add_scalar('LogP', logp_count/logp_count_items, epoch)
                 self.writers[str(i)].add_scalar('SAS Score', sascore_count/sascore_count_items, epoch)
+                self.writers[str(i)].add_scalar('Docking', docking/docking_items, epoch)
 
                 # print("Valid QED scores: " + str(qed_score_count_items/qed_score_count_items))
                 # print("Valid ring counts: " + str(ring_count_items/ring_count_items))
@@ -304,6 +317,7 @@ class Trainer:
 
 
         if self.config.molgym_eval:
+            rewards = 0
             for formula_string in self.config.molgym_eval_formulas:
                 formula = Formula(formula_string)
                 x_pocket = self.X_pocket_train[0]
@@ -337,7 +351,10 @@ class Trainer:
                         pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
 
                 self.writers[formula_string].add_scalar('Reward', reward/self.config.num_molgym_eval, epoch)
+                rewards += reward / self.config.num_molgym_eval
                 print("Reward for " + formula_string + ": " + str(reward/self.config.num_molgym_eval))
+            self.writers['filtered'].add_scalar('Reward', rewards / len(self.config.molgym_eval_formulas), epoch)
+            print("Reward for " + formula_string + ": " + str(rewards / len(self.config.molgym_eval_formulas)))
 
     def test(self) -> None:
             total_loss = 0
