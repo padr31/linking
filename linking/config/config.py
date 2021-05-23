@@ -17,8 +17,8 @@ class Config(BaseModel):
     # Data stuff
     specific_pockets: list = None # ['ace', 'aces', 'ada17', 'egfr', 'ppard', 'andr', 'cah2', 'src', 'lck', 'plk1', 'pde5a']  # relevant for dude, when set, only trains on ligands for the selected protein
     ligands_per_pocket: int = 200
-    eval_data: list = [0, 1]
-    num_eval_generate: int = 10
+    eval_data: list = [0, 1, 2]
+    num_eval_generate: int = 20
     num_eval_filtered: int = 40
     remove_hydrogens: bool = False  # rerun data processing step of ligands when you set this
     molgym_eval: bool = False
@@ -27,7 +27,7 @@ class Config(BaseModel):
     molgym_eval_formulas: list = ['H2O', 'CHN', 'C2N2', 'H3N', 'C2H2', 'CH2O', 'C2HNO', 'N4O', 'C3HN', 'CH4', 'CF4'] # ['C2H2O2', 'CH3NO', 'CH4O', 'C3H5NO3', 'C4H7N', 'C3H8O', 'C7H8N2O2']
 
     # Model stuff
-    num_train: int = 1024
+    num_train: int = 2048
     num_test: int = 16
     train_test_ratio: int = 10
     model: str = "TeacherForcer"  # "MoleculeGenerator" # "SimpleModel"

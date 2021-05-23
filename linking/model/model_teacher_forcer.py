@@ -15,7 +15,6 @@ from linking.util.eval import construct_molgym_environment
 from torch.distributions import Normal
 import torch.nn.functional as F
 
-
 class TeacherForcer(torch.nn.Module):
     def __init__(self,
                  pocket_encoder: GCNEncoder,
@@ -126,6 +125,12 @@ class TeacherForcer(torch.nn.Module):
             coord_v[0 if generate else bfs_index[0][0]] = x_pos_l[0 if generate else bfs_index[0][0]]
             coord_helper = CoordinateHelper()
             coord_helper.add_point(torch.tensor(0, device=self.device) if generate else bfs_index[0][0], x_pos_l[0 if generate else bfs_index[0][0]])
+            pocket_graph_coords = torch.cat([coord_v, x_pos_p])
+            pocket_graph_features = torch.cat([torch.zeros(coord_v.size(0), device=self.device, dtype=torch.long),
+                                               torch.ones(x_pos_p.size(0), device=self.device,
+                                                          dtype=torch.long)])
+            C = self.sch(pocket_graph_features, pocket_graph_coords)
+            C_avg = torch.mean(C, dim=0)
 
         log_prob = torch.tensor(0.0,  dtype=torch.float, device=self.device)
 
@@ -200,6 +205,7 @@ class TeacherForcer(torch.nn.Module):
             # edge feature phi = [t, z_pocket, z_ligand, z_u, l_u, z_v, l_v, d, G]
             num_nodes = z_v.size()[0]
             dist_v = bfs_distance(u, adj)
+
             phi = torch.cat((
                 torch.tensor([time], device=self.device).unsqueeze(0).repeat(num_nodes, 1),
                 z_pocket.unsqueeze(0).repeat(num_nodes, 1),  # pocket agg latent
@@ -209,7 +215,19 @@ class TeacherForcer(torch.nn.Module):
                 lab_v,  # labels
                 dist_v,
                 H_t.unsqueeze(0).repeat(num_nodes, 1),  # graph agg latent
-                H_init.unsqueeze(0).repeat(num_nodes, 1)  # graph initial agg latent
+                H_init.unsqueeze(0).repeat(num_nodes, 1),  # graph initial agg latent
+                C[u].repeat(num_nodes, 1),
+                C_avg.unsqueeze(0).repeat(num_nodes, 1),
+            ), dim=1) if coords else torch.cat((
+                torch.tensor([time], device=self.device).unsqueeze(0).repeat(num_nodes, 1),
+                z_pocket.unsqueeze(0).repeat(num_nodes, 1),  # pocket agg latent
+                z_v[u].repeat(num_nodes, 1),  # u latent feature
+                lab_v[u].repeat(num_nodes, 1),  # u label
+                z_v,  # latents
+                lab_v,  # labels
+                dist_v,
+                H_t.unsqueeze(0).repeat(num_nodes, 1),  # graph agg latent
+                H_init.unsqueeze(0).repeat(num_nodes, 1),  # graph initial agg latent
             ), dim=1)
 
             # select node v to add

@@ -120,6 +120,14 @@ class Trainer:
 
             metrics = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'reward': 0, 'sascore':0, 'logp': 0, 'docking': 0}
             # metrics to pass filter
+            metrics['qed'] = qed_score(generated_ligand_mol)
+            if metrics['qed'] is None or metrics['qed'] < 0.25:
+                continue
+
+            metrics['sascore'] = rdkit_sascore(generated_ligand_mol)
+            if metrics['sascore'] is None or metrics['sascore'] > 6:
+                continue
+
             metrics['tanimoto'] = tanimoto_score(generated_ligand_mol, ligand_mol)
             if metrics['tanimoto'] is None:
                 continue
@@ -130,14 +138,6 @@ class Trainer:
 
             metrics['ring'] = lipinski_ring_count(generated_ligand_mol)
             if metrics['ring'] is None:
-                continue
-
-            metrics['qed'] = qed_score(generated_ligand_mol)
-            if metrics['qed'] is None:
-                continue
-
-            metrics['sascore'] = rdkit_sascore(generated_ligand_mol)
-            if metrics['sascore'] is None:
                 continue
 
             metrics['logp'] = rdkit_logp(generated_ligand_mol)
@@ -152,7 +152,7 @@ class Trainer:
                 d_score = score(generated_ligand_mol, prot_path, str(epoch) + "ep_" + ligand_write_id + '_gen', dock=True, embed=True,
                           bounding_box=x_pocket.bounding_box)
                 metrics['docking'] = d_score
-                if metrics['docking'] is None:
+                if metrics['docking'] is None or metrics['docking'] > 0.0:
                     continue
 
             filtered_count += 1
@@ -184,35 +184,20 @@ class Trainer:
             for metric_name in scores.keys():
                 self.writers['filtered'].add_scalar(self.metric_descriptions[metric_name], scores[metric_name]/filtered_count, epoch)
 
-            print("Overall metrics (" + str(filtered_count/self.config.num_eval_filtered) + " passed filter) --- tanimoto: " + str(scores['tanimoto']/filtered_count) + " qed: " + str(scores['qed']/filtered_count) + " sascore: " + str(scores['sascore']/filtered_count))
+            print("Overall metrics (" + str(filtered_count/self.config.num_eval_filtered) + " passed filter) --- docking: " + str(
+                    scores['docking'] / filtered_count) + " tanimoto: " + str(
+                scores['tanimoto']/filtered_count) + " qed: " + str(
+                scores['qed']/filtered_count) + " sascore: " + str(
+                scores['sascore']/filtered_count))
+
 
         # evaluate specific molecules
+        scores = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'sascore': 0, 'logp': 0, 'reward': 0, 'docking': 0}
+        filtered_count = 0
         for i in self.config.eval_data:
             x_ligand = self.X_ligand_train[i]
             x_pocket = self.X_pocket_train[i]
             protein_name = str(x_ligand.name.split('/')[-1].split('_')[0])
-
-            tanimoto = 0
-
-            nhoh_count = 0
-            nhoh_count_items = 0
-
-            ring_count = 0
-            ring_count_items = 0
-
-            qed_score_count = 0
-            qed_score_count_items = 0
-
-            sascore_count = 0
-            sascore_count_items = 0
-
-            logp_count = 0
-            logp_count_items = 0
-
-            reward = 0
-
-            docking = 0
-            docking_items = 0
 
             ligand_mol = to_rdkit(Data(x=x_ligand.x[:, 4:], edge_index=x_ligand.edge_index, edge_attr=x_ligand.edge_attr, pos=x_ligand.x[:, 1:4]), device=self.model.device)
             ligand_mol = rdkit_sanitize(ligand_mol)
@@ -239,46 +224,48 @@ class Trainer:
                     Data(x=pred_generate[0], edge_index=pred_generate[1], edge_attr=pred_generate[2], pos=(pred_generate[3] if self.config.coords else None)), device=self.model.device)
                 generated_ligand_mol = rdkit_sanitize(generated_ligand_mol)
 
-                # docking
+                metrics = {'tanimoto': 0, 'nhoh': 0, 'ring': 0, 'qed': 0, 'reward': 0, 'sascore': 0, 'logp': 0, 'docking': 0}
+
+                # metrics to pass filter
+                metrics['qed'] = qed_score(generated_ligand_mol)
+                if metrics['qed'] is None or metrics['qed'] < 0.25:
+                    continue
+
+                metrics['sascore'] = rdkit_sascore(generated_ligand_mol)
+                if metrics['sascore'] is None or metrics['sascore'] > 6:
+                    continue
+
+                metrics['tanimoto'] = tanimoto_score(generated_ligand_mol, ligand_mol)
+                if metrics['tanimoto'] is None:
+                    continue
+
+                metrics['nhoh'] = lipinski_nhoh_count(generated_ligand_mol)
+                if metrics['nhoh'] is None:
+                    continue
+
+                metrics['ring'] = lipinski_ring_count(generated_ligand_mol)
+                if metrics['ring'] is None:
+                    continue
+
+                metrics['logp'] = rdkit_logp(generated_ligand_mol)
+                if metrics['logp'] is None:
+                    continue
+
+                metrics['reward'] = pred_generate[4]
+
+                # docking generated ligand
                 if self.config.coords and self.config.dock_eval:
                     docking_s = score(generated_ligand_mol, prot_path, "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name, dock=True, embed=True, bounding_box=x_pocket.bounding_box)
                     print(docking_s)
-                    if not docking_s is None:
-                        docking += docking_s
-                        docking_items += 1
+                    metrics['docking'] = docking_s
+                    if metrics['docking'] is None or metrics['docking'] > 0.0:
+                        continue
 
-                generated_ligand_fingerprint = rdkit_fingerprint(generated_ligand_mol)
-                generated_ligand_tanimoto = rdkit_tanimoto(ligand_fingerprint, generated_ligand_fingerprint)
-                tanimoto += generated_ligand_tanimoto / self.config.num_eval_generate
-                reward += pred_generate[4]
+                filtered_count += 1
+                for metric_name in scores.keys():
+                    scores[metric_name] += metrics[metric_name]
 
-                nhoh_c = lipinski_nhoh_count(generated_ligand_mol)
-                if not nhoh_c is None:
-                    nhoh_count += nhoh_c
-                    nhoh_count_items += 1
-
-                ring_c = lipinski_ring_count(generated_ligand_mol)
-                if not ring_c is None:
-                    ring_count += ring_c
-                    ring_count_items += 1
-
-                qed_s = qed_score(generated_ligand_mol)
-                if not qed_s is None:
-                    qed_score_count += qed_s
-                    qed_score_count_items += 1
-
-                sascore_s = rdkit_sascore(generated_ligand_mol)
-                if not sascore_s is None:
-                    sascore_count += sascore_s
-                    sascore_count_items += 1
-
-                logp_s = rdkit_logp(generated_ligand_mol)
-                if not logp_s is None:
-                    logp_count += logp_s
-                    logp_count_items += 1
-
-                generated_ligand_svg = mol_to_svg(generated_ligand_mol)
-
+                # writeouts and visualisations
                 # show in 3D in PyMol if Viewer running
                 if self.config.coords and (not self.viewer is None):
                      generated_ligand_png = mol_to_3d_svg(generated_ligand_mol, viewer=self.viewer, pocket_file=x_pocket.name)
@@ -288,33 +275,27 @@ class Trainer:
                          print('error saving png from pymol')
 
                 # svg writeout of generated ligand
+                generated_ligand_svg = mol_to_svg(generated_ligand_mol)
                 with open(self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name + ".svg", "w") as svg_file:
                     svg_file.write(generated_ligand_svg)
 
                 # save 3D .png (not very useful)
-                if self.config.coords:
-                    file_save_name = self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
-                    pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
+                # if self.config.coords:
+                #    file_save_name = self.config.svg_dir + "generated_ligand_" + str(epoch) + "_" + str(j) + "_" + protein_name
+                #    pos_plot_3D(pred_generate[3], pred_generate[1], pred_generate[0], 90, save_name=file_save_name)
                 # torchgeom_plot(Data(x=pred_generate[0], edge_index=pred_generate[1]))
 
             # log aggregated scores of ligand i
-            if self.config.num_eval_generate > 0:
-                self.writers[str(i)].add_scalar('Tanimoto', tanimoto, epoch)
-                self.writers[str(i)].add_scalar('NHOH Count', nhoh_count/nhoh_count_items, epoch)
-                self.writers[str(i)].add_scalar('Ring Count', ring_count/ring_count_items, epoch)
-                self.writers[str(i)].add_scalar('QED Score', qed_score_count/qed_score_count_items, epoch)
-                self.writers[str(i)].add_scalar('LogP', logp_count/logp_count_items, epoch)
-                self.writers[str(i)].add_scalar('SAS Score', sascore_count/sascore_count_items, epoch)
-                self.writers[str(i)].add_scalar('Docking', docking/docking_items, epoch)
+            if self.config.num_eval_generate > 0 and filtered_count > 0:
+                for metric_name in scores.keys():
+                    self.writers[str(i)].add_scalar(self.metric_descriptions[metric_name],
+                                                        scores[metric_name] / filtered_count, epoch)
 
-                # print("Valid QED scores: " + str(qed_score_count_items/qed_score_count_items))
-                # print("Valid ring counts: " + str(ring_count_items/ring_count_items))
-                # print("Valid nhoh counts: " + str(nhoh_count_items/nhoh_count_items))
-                print("Tanimoto coefficient of " + protein_name + ": " + str(tanimoto))
-
-                if self.config.molgym_eval:
-                    self.writers[str(i)].add_scalar('Reward', reward/self.config.num_eval_generate, epoch)
-
+                print("Overall metrics for " + protein_name + " : " + str(
+                    filtered_count / self.config.num_eval_filtered) + " passed filter) --- docking: " + str(
+                    scores['docking'] / filtered_count) + " tanimoto: " + str(
+                    scores['tanimoto'] / filtered_count) + " qed: " + str(
+                    scores['qed'] / filtered_count) + " sascore: " + str(scores['sascore'] / filtered_count))
 
         if self.config.molgym_eval:
             rewards = 0

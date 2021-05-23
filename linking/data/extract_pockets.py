@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 import os
 
-ROOT_DIR = Path("/Users/padr/repos/linking/datasets/dude/raw").resolve()
+ROOT_DIR = Path("/Users/padr/repos/linking/datasets/docking_bench").resolve()
 targets = [dir for dir in os.listdir(ROOT_DIR) if not dir.startswith(".")]
 
 class DistanceSelect(Select):
@@ -38,11 +38,11 @@ def calculate_distance(protein, ligand_coords: np.ndarray):
                 dist[residue.id[1]] = min(atom_dist)
     return dist
 
-def extract_pocket(target, threshold: float = 8.0):
+def extract_pocket(target, threshold: float = 10.0):
     # Load Protein and ligand
     parser = PDBParser(QUIET=True)
-    protein = parser.get_structure(ROOT_DIR / target / "receptor.pdb", ROOT_DIR / target / "receptor.pdb")
-    ligand = Chem.MolFromMol2File(str((ROOT_DIR / target / "crystal_ligand.mol2").resolve()))
+    protein = parser.get_structure(ROOT_DIR / target / (str(target).capitalize() + "_protein.pdb"), ROOT_DIR / target / (str(target).capitalize() + "_protein.pdb"))
+    ligand = Chem.MolFromMol2File(str((ROOT_DIR / target / (str(target).capitalize() + "_ligand.mol2")).resolve()))
 
     # Get ligand atomic coords
     lig_coords = ligand.GetConformer().GetPositions()

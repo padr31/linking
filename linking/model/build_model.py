@@ -32,7 +32,10 @@ def build_forcer_model(config: Config, device) -> nn.Module:
     linear_atom_classifier = LinearAtomClassifier(in_channels=config.ligand_encoder_out_channels, out_channels=config.num_allowable_atoms)
 
     # [t, z_pocket, z_u, l_u, z_v, l_v, d, H_t, H_init]
-    edge_feature_size = 1 + config.pocket_encoder_out_channels + 2*(config.num_allowable_atoms+config.graph_encoder_out_channels + config.num_allowable_atoms) + 1 + (config.ligand_encoder_out_channels + config.num_allowable_atoms) + (config.num_allowable_atoms+config.graph_encoder_out_channels + config.num_allowable_atoms)
+    edge_feature_size = + 1 + config.pocket_encoder_out_channels + 2*(config.num_allowable_atoms+config.graph_encoder_out_channels + config.num_allowable_atoms) + 1 + (config.ligand_encoder_out_channels + config.num_allowable_atoms) + (config.num_allowable_atoms+config.graph_encoder_out_channels + config.num_allowable_atoms)
+    if config.coords:
+        # add SchNet info to node and edge selection [C_u, C_avg]
+        edge_feature_size += 2*(config.sch_net_output_channels)
     linear_edge_selector = LinearEdgeSelector(edge_feature_size)
     # used previously redundantly to classify all edges
     # linear_edge_classifier = LinearEdgeClassifier(edge_feature_size, config.num_allowable_bonds)

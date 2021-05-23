@@ -52,9 +52,8 @@ def _exec_subprocess(command: List[str], timeout: int = None) -> List[str]:
             raise ValueError('Docking failed')
 
         return out
-    except subprocess.TimeoutExpired:
+    except:
         print('Docking failed with command ' + cmd)
-        raise ValueError('Docking timeout')
 
 def embed_mol(molecule):
     conf_id = AllChem.EmbedMolecule(molecule, useRandomCoords=True, ignoreSmoothingFailures=True)
@@ -111,12 +110,13 @@ def dock_mol2(ligand_path, protein_path, output_path, bounding_box):
         '--size_x', 10,
         '--size_y', 10,
         '--size_z', 10,
-        '--exhaustiveness', 8,
+        '--exhaustiveness', 6,
+        '--cpu', 8,
         '--out', os.path.abspath(output_path),
         '--scoring', 'vinardo',
     ]
 
-    return _exec_subprocess(cmd, timeout=500)
+    return _exec_subprocess(cmd, timeout=300)
 
 
 def score(ligand_mol, protein_path, label, embed=False, dock=False, bounding_box=None):
@@ -148,5 +148,10 @@ def score(ligand_mol, protein_path, label, embed=False, dock=False, bounding_box
                         '-r', os.path.abspath(protein_path),
                     ]
                 smina_stdout = _exec_subprocess(command)
+                if smina_stdout is None:
+                    return None
                 results = parse_score_only(smina_stdout)
-                return results[0]['affinity']
+                if results is None or results == []:
+                    return None
+                else:
+                    return results[0]['affinity']
